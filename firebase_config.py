@@ -2,19 +2,22 @@ import firebase_admin
 from firebase_admin import credentials, firestore, auth
 import streamlit as st
 import os
+import json
 
-# Função para inicializar o Firebase apenas uma vez
 def inicializar_firebase():
     if not firebase_admin._apps:
-        
-        # 1. Tenta pegar a chave dos Segredos da Nuvem (Streamlit Cloud)
-        if "firebase" in st.secrets:
+        # 1. Tenta carregar o JSON completo direto dos Segredos da Nuvem
+        if "FIREBASE_JSON" in st.secrets:
+            cred_info = json.loads(st.secrets["FIREBASE_JSON"])
+            cred = credentials.Certificate(cred_info)
+        elif "firebase" in st.secrets:
+            # Compatibilidade com o formato antigo
             cred_dict = dict(st.secrets["firebase"])
+            if "private_key" in cred_dict:
+                cred_dict["private_key"] = cred_dict["private_key"].replace("\\n", "\n")
             cred = credentials.Certificate(cred_dict)
-            
-        # 2. Se não achar (significa que está rodando no seu PC), usa a chave local
         else:
-            # Pega o caminho do seu arquivo de credenciais local
+            # 2. Se estiver rodando no seu PC, usa o arquivo local
             cred_path = os.path.join("config", "serviceAccountKey.json")
             cred = credentials.Certificate(cred_path)
             
@@ -22,5 +25,4 @@ def inicializar_firebase():
     
     return firestore.client()
 
-# Instancia o banco de dados
 db = inicializar_firebase()
