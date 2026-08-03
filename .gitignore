@@ -1,0 +1,12 @@
+.streamlit/secrets.toml
+config/serviceAccountKey.json
+__pycache__/
+
+# Ignorar chaves e credenciais
+config/serviceAccountKey.json
+.env
+
+# Ignorar pastas de ambiente virtual do Python
+venv/
+env/
+__pycache__/
