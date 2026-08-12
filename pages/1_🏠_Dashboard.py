@@ -1042,48 +1042,107 @@ elif st.session_state.menu_atual == "Por Categoria":
 
     # Paleta de cores dinâmica
     cor_cat = "#16a34a" # Verde padrão (Prática)
-    if cat_analise == ["Falta", "Ponto facultativo"]: cor_cat = "#dc2626" # Vermelho
+    if cat_analise in ["Falta", "Ponto facultativo"]: cor_cat = "#dc2626" # Vermelho
     elif cat_analise in ["Ausência justificada", "Férias", "Feriado", "Licença", "Atestado", "ATESTADO"]: cor_cat = "#d97706" # Laranja
     elif cat_analise in ["Teórica", "Teórico-prática"]: cor_cat = "#1e40af" # Azul
 
-    soma_historica_horas = 0.0
-    soma_historica_dias = 0
+    soma_historica_ocorrencias = 0
+    soma_debito_ausencias = 0.0 
+    soma_debito_p = 0.0 # NOVA VARIÁVEL: Acumulado de Prática
+    soma_debito_t = 0.0 # NOVA VARIÁVEL: Acumulado de Teórica
     evolucao_cat_y = []
+    
+    registros_detalhados = []
 
-    # Varredura inteligente: separa o que é 'Hora' do que é 'Dia'
+    # Varredura inteligente: analisa o peso de horas de cada registro (parcial ou integral)
     for m in lista_meses_crono:
-        horas_mes = dados_mensais[m]["por_categoria"].get(cat_analise, 0.0)
+        ocorrencias_mes = 0
+        debito_mes = 0.0
         
-        # Puxa no banco a quantidade exata de DIAS que o residente usou essa categoria no mês
-        dias_mes = sum(
-            1 for p in todos_pontos 
-            if p.get("categoria", "") == cat_analise and 
-            f"{meses_num_para_pt.get(p.get('data_registro', '')[5:7], '')}/{p.get('data_registro', '')[0:4]}" == m
-        )
+        for p in todos_pontos:
+            if p.get("categoria", "") == cat_analise:
+                data_str = p.get("data_registro", "")
+                if f"{meses_num_para_pt.get(data_str[5:7], '')}/{data_str[0:4]}" == m:
+                    ocorrencias_mes += 1
+                    
+                    horas_lancadas = float(p.get("horas_computadas", 0.0))
+                    dt_obj = datetime.strptime(data_str, "%Y-%m-%d").date()
+                    p_dia, t_dia = obter_metas_do_dia(dt_obj)
+                    
+                    is_ausencia = cat_analise in ["Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "ATESTADO", "Ponto facultativo"]
+                    
+                    if is_ausencia:
+                        # Calcula quanto o residente trabalhou NESTE MESMO DIA (para atestados parciais)
+                        horas_trab_p = sum(float(p2.get("horas_computadas", 0.0)) for p2 in todos_pontos if p2.get("data_registro") == data_str and p2.get("categoria") == "Prática")
+                        horas_trab_t = sum(float(p2.get("horas_computadas", 0.0)) for p2 in todos_pontos if p2.get("data_registro") == data_str and p2.get("categoria") in ["Teórica", "Teórico-prática"])
+                        
+                        # O débito real de cada eixo é o que FALTOU para cumprir a meta do dia!
+                        debito_p = p_dia - horas_trab_p
+                        if debito_p < 0: debito_p = 0.0 
+                        
+                        debito_t = t_dia - horas_trab_t
+                        if debito_t < 0: debito_t = 0.0 
+                        
+                        debito_real = debito_p + debito_t
+                        debito_mes += debito_real
+                        
+                        soma_debito_p += debito_p
+                        soma_debito_t += debito_t
+                        
+                        peso_visual = f"-{formatar_horas_exatas(debito_real)}" if debito_real > 0 else "0h"
+                        badge_p = f"-{formatar_horas_exatas(debito_p)}"
+                        badge_t = f"-{formatar_horas_exatas(debito_t)}"
+                    else:
+                        # Se for Prática/Teórica, apenas computa as horas que foram lançadas
+                        debito_mes += horas_lancadas
+                        peso_visual = f"+{formatar_horas_exatas(horas_lancadas)}" if horas_lancadas > 0 else "0h"
+                        if cat_analise == "Prática":
+                            badge_p = f"+{formatar_horas_exatas(horas_lancadas)}"
+                            badge_t = "0h"
+                        else:
+                            badge_p = "0h"
+                            badge_t = f"+{formatar_horas_exatas(horas_lancadas)}"
+                        
+                    obs = p.get("justificativa", "")
+                    if not obs: obs = "Sem observações detalhadas"
+                    
+                    h_desc = " | ".join(p.get("horarios_descritos", []))
+                    if not h_desc: h_desc = "Dia Integral / Sem relógio"
+                    
+                    registros_detalhados.append({
+                        "data_obj": dt_obj,
+                        "horarios": h_desc,
+                        "obs": obs,
+                        "peso": peso_visual,
+                        "badge_p": badge_p,
+                        "badge_t": badge_t,
+                        "is_ausencia": is_ausencia
+                    })
         
-        soma_historica_horas += horas_mes
-        soma_historica_dias += dias_mes
+        soma_historica_ocorrencias += ocorrencias_mes
+        soma_debito_ausencias += debito_mes
         
-        # O gráfico muda de comportamento dependendo do que faz sentido para a categoria
+        # O gráfico agora vai mostrar HORAS para tudo, garantindo precisão cirúrgica
         if cat_analise in ["Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "ATESTADO", "Ponto facultativo"]:
-            evolucao_cat_y.append(dias_mes)
-            unidade_grafico = "Dias"
+            evolucao_cat_y.append(debito_mes)
         else:
-            evolucao_cat_y.append(horas_mes)
-            unidade_grafico = "Horas"
+            evolucao_cat_y.append(dados_mensais[m]["por_categoria"].get(cat_analise, 0.0))
 
     c1, c2 = st.columns([1, 2])
     with c1:
-        # Textos customizados para respeitar a regra da residência (Ex: Férias = 30 dias/ano)
+        # Textos customizados para respeitar a regra da residência e dias parciais
         if cat_analise == "Férias":
-            texto_principal = f"{soma_historica_dias} dia(s)"
-            texto_secundario = f"Equivale a {formatar_horas_exatas(soma_historica_horas)} de abono.<br>Você tem direito a {DIAS_FERIAS_ANO} dias por ano."
-        elif cat_analise in ["Ausência justificada", "Falta", "Licença", "Atestado", "ATESTADO"]:
-            texto_principal = f"{soma_historica_dias} dia(s)"
-            texto_secundario = f"Total de horas registradas nesses dias: {formatar_horas_exatas(soma_historica_horas)}" if soma_historica_horas > 0 else "Gera ausência na carga horária do dia."
+            texto_principal = formatar_horas_exatas(soma_debito_ausencias)
+            texto_secundario = f"Abono de {soma_historica_ocorrencias} registro(s).<br><span style='color: #1e40af; font-weight: 600;'>Prática: {formatar_horas_exatas(soma_debito_p)}</span> | <span style='color: #d97706; font-weight: 600;'>Teórica: {formatar_horas_exatas(soma_debito_t)}</span>"
+        
+        elif cat_analise in ["Ausência justificada", "Falta", "Licença", "Atestado", "ATESTADO", "Feriado", "Ponto facultativo"]:
+            texto_principal = f"-{formatar_horas_exatas(soma_debito_ausencias)}" if soma_debito_ausencias > 0 else "0h"
+            texto_secundario = f"Corresponde a {soma_historica_ocorrencias} registro(s).<br><span style='color: #1e40af; font-weight: 600;'>Prática: -{formatar_horas_exatas(soma_debito_p)}</span> | <span style='color: #d97706; font-weight: 600;'>Teórica: -{formatar_horas_exatas(soma_debito_t)}</span>"
+        
         else:
-            texto_principal = formatar_horas_exatas(soma_historica_horas)
-            texto_secundario = f"Distribuídos em {soma_historica_dias} dias de registro."
+            soma_horas_trabalhadas = sum(dados_mensais[m]["por_categoria"].get(cat_analise, 0.0) for m in lista_meses_crono)
+            texto_principal = formatar_horas_exatas(soma_horas_trabalhadas)
+            texto_secundario = f"Distribuídos em {soma_historica_ocorrencias} registro(s)."
 
         st.markdown(f"""
             <div data-testid='column' style='background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb; border-left: 5px solid {cor_cat}; height: 100%;'>
@@ -1094,14 +1153,12 @@ elif st.session_state.menu_atual == "Por Categoria":
         """, unsafe_allow_html=True)
         
     with c2:
-        st.markdown(f"<div class='card-title'>Evolução Mensal ({unidade_grafico})</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='card-title'>Evolução Mensal (Horas)</div>", unsafe_allow_html=True)
         if sum(evolucao_cat_y) == 0:
             st.info(f"Nenhum registro de '{cat_analise}' encontrado no período.")
         else:
             eixo_x_meses_abrev = [m.split('/')[0][:3] for m in lista_meses_crono]
-            
-            # Formata o texto que vai flutuar acima das barras do gráfico
-            textos_barras = [f"{v} d" if unidade_grafico == "Dias" else formatar_horas_exatas(v) for v in evolucao_cat_y]
+            textos_barras = [formatar_horas_exatas(v) for v in evolucao_cat_y]
             
             fig_cat = go.Figure(go.Bar(
                 x=eixo_x_meses_abrev, 
@@ -1109,7 +1166,7 @@ elif st.session_state.menu_atual == "Por Categoria":
                 marker_color=cor_cat, 
                 width=0.4,
                 text=textos_barras,
-                textposition='outside', # Coloca o número acima da barra
+                textposition='outside',
                 textfont=dict(color="#374151", size=11)
             ))
             
@@ -1119,7 +1176,40 @@ elif st.session_state.menu_atual == "Por Categoria":
                 paper_bgcolor="rgba(0,0,0,0)", 
                 plot_bgcolor="rgba(0,0,0,0)", 
                 xaxis=dict(color="#374151"), 
-                yaxis=dict(color="#374151", showgrid=True, gridcolor="#e5e7eb", zeroline=False, tickformat="d" if unidade_grafico == "Dias" else None)
+                yaxis=dict(color="#374151", showgrid=True, gridcolor="#e5e7eb", zeroline=False)
             )
             
             st.plotly_chart(fig_cat, width='stretch', config={'displayModeBar': False})
+
+    # =========================================================
+    # NOVA SEÇÃO: LISTAGEM DETALHADA DOS REGISTROS DA CATEGORIA
+    # =========================================================
+    st.markdown("<hr style='margin-top: 30px; border-color: #e5e7eb;'>", unsafe_allow_html=True)
+    st.markdown(f"<div class='card-title' style='margin-bottom: 15px;'>📋 Histórico Detalhado: {cat_analise}</div>", unsafe_allow_html=True)
+
+    if registros_detalhados:
+        registros_detalhados = sorted(registros_detalhados, key=lambda k: k["data_obj"], reverse=True)
+
+        for reg in registros_detalhados:
+            data_formatada = reg["data_obj"].strftime("%d/%m/%Y")
+            
+            bg_badge = "#fef2f2" if reg['is_ausencia'] else "#f0fdf4"
+            text_badge = "#dc2626" if reg['is_ausencia'] else "#16a34a"
+            
+            st.markdown(f"""
+            <div style='display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border: 1px solid #e5e7eb; border-left: 4px solid {cor_cat}; border-radius: 6px; margin-bottom: 10px; background-color: #f8fafc;'>
+                <div>
+                    <div style='font-size: 0.95rem; font-weight: 700; color: #111827;'>{data_formatada} <span style='color: #6b7280; font-weight: 500; font-size: 0.85rem; margin-left: 8px;'>🕛 {reg['horarios']}</span></div>
+                    <div style='display: flex; gap: 8px; margin-top: 6px; margin-bottom: 4px;'>
+                        <span style='background-color: {bg_badge}; color: {text_badge}; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; border: 1px solid {text_badge}40;'>Prática: {reg['badge_p']}</span>
+                        <span style='background-color: {bg_badge}; color: {text_badge}; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; border: 1px solid {text_badge}40;'>Teórica: {reg['badge_t']}</span>
+                    </div>
+                    <div style='font-size: 0.85rem; color: #4b5563; font-style: italic;'>{reg['obs']}</div>
+                </div>
+                <div style='text-align: right; font-weight: 800; color: {cor_cat}; font-size: 1.2rem;'>
+                    {reg['peso']}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.info(f"Nenhum registro detalhado para a categoria '{cat_analise}' no momento.")
