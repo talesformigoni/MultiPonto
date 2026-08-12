@@ -1,5 +1,7 @@
 streamlit
-plotly
-firebase-admin
+requests
+pandas
+openpyxlplotly
+firebase-admin==6.5.0
 google-cloud-firestore
 zoneinfo; python_version < "3.9"
