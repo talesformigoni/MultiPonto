@@ -12,42 +12,65 @@ HORAS_DEBITO_FALTA = 9.0  # Atualizado para a carga diária padrão
 DIAS_FERIAS_ANO = 30      # Férias são 30 dias anuais (contabilizadas por dia)
 
 def obter_metas_do_dia(data_alvo):
-    """
-    Retorna a meta exata de horas (prática, teórica) para um dia específico (datetime.date),
-    baseado no cronograma natural oficial da residência.
-    """
-    weekday = data_alvo.weekday() # 0=Seg, 1=Ter, 2=Qua, 3=Qui, 4=Sex, 5=Sab, 6=Dom
-    nth_week = (data_alvo.day - 1) // 7 + 1
+    # 0 = Seg, 1 = Ter, 2 = Qua, 3 = Qui, 4 = Sex, 5 = Sáb, 6 = Dom
+    dia_semana = data_alvo.weekday() 
+
+    meta_pratica = 0.0
+    meta_teorica = 0.0
+
+    # ==================================================
+    # 1. CARGA DE PRÁTICA (Fixo)
+    # ==================================================
+    if dia_semana == 0:   meta_pratica = 9.0  # Seg
+    elif dia_semana == 1: meta_pratica = 12.0 # Ter
+    elif dia_semana == 2: meta_pratica = 9.0  # Qua
+    elif dia_semana == 3: meta_pratica = 9.0  # Qui
+    elif dia_semana == 4: meta_pratica = 9.0  # Sex
+    elif dia_semana == 5: meta_pratica = 0.0  # Sáb
+    elif dia_semana == 6: meta_pratica = 0.0  # Dom
+
+    # ==================================================
+    # 2. CARGA TEÓRICA (Apenas Aulas Comprováveis)
+    # ==================================================
     
-    pratica = 0.0
-    teorica = 0.0
+    # A) Descobrindo qual é a "Semana Completa do Mês" baseada na Quinta-feira.
+    # Se a quinta-feira cai no mês atual, aquela é uma semana válida do mês.
+    quinta_da_semana = data_alvo + timedelta(days=(3 - dia_semana))
+    mes_da_semana = quinta_da_semana.month
+    semana_do_mes = (quinta_da_semana.day - 1) // 7 + 1
     
-    # --- PRÁTICA (Meta: 48h semanais) ---
-    if weekday in [0, 2, 3, 4]: # Segunda, Quarta, Quinta, Sexta
-        pratica = 9.0
-    elif weekday == 1: # Terça (inclui 3h de prática à noite)
-        pratica = 12.0
-        
-    # --- TEÓRICA (Baseado no cronograma Eixo/AAD) ---
-    if weekday == 0: # Segunda-feira
-        if nth_week in [1, 2]:
-            teorica = 2.5 # 18h às 20h30 (Aula Eixo Transversal)
-        else:
-            teorica = 4.5 # 18h às 22h30 (AAD)
-    elif weekday == 2: # Quarta-feira
-        teorica = 3.0 # 18h às 21h00 (Eixo Específico)
-    elif weekday == 3: # Quinta-feira
-        if nth_week in [1, 2]:
-            teorica = 2.5 # 18h às 20h30 (Aula Eixo Transversal)
-        else:
-            teorica = 4.5 # 18h às 22h30 (AAD)
-    elif weekday == 5: # Sábado
-        if nth_week in [1, 2]:
-            teorica = 4.5 # 18h às 22h30 (AAD)
-        else:
-            teorica = 0.0
+    # Se a semana "pertence" a outro mês, não cobramos as metas mensais neste dia
+    # para evitar cobrar duas vezes na virada do mês.
+    pertence_a_este_mes = (data_alvo.month == mes_da_semana)
+
+    # B) Eixos Transversais (Semana 1 e 2 do mês âncora)
+    if pertence_a_este_mes:
+        if semana_do_mes == 1:
+            # Transversal: Seg e Qui (2.5h)
+            if dia_semana in [0, 3]: 
+                meta_teorica += 2.5
+        elif semana_do_mes == 2:
+            # Concentração: Seg e Qui (2.5h)
+            if dia_semana in [0, 3]:
+                meta_teorica += 2.5
+
+    # C) Eixo Específico (Todas as semanas, 1x na semana)
+    # Duração: 3h nas primeiras 8 semanas (a partir da 1ª semana de Maio), depois 2h.
+    duracao_especifico = 3.0
+    
+    # A primeira quinta-feira de Maio/2026 cai no dia 07/05
+    primeira_quinta_maio = date(2026, 5, 7)
+    
+    if quinta_da_semana >= primeira_quinta_maio:
+        semanas_passadas = (quinta_da_semana - primeira_quinta_maio).days // 7
+        if semanas_passadas >= 8:
+            duracao_especifico = 2.0
             
-    return pratica, teorica
+    # Ancoramos a cobrança do Eixo Específico na Quarta-feira
+    if dia_semana == 2:
+        meta_teorica += duracao_especifico
+
+    return meta_pratica, meta_teorica
 
 
 def calcular_motor_horas(todos_pontos, data_inicio, data_hoje, lista_meses, meses_num_para_pt):
@@ -136,7 +159,7 @@ def calcular_motor_horas(todos_pontos, data_inicio, data_hoje, lista_meses, mese
                 # APENAS Férias contam como isenção (abonam as horas exatas daquele dia)
                 elif cat == "Férias":
                     credito_total_dia = meta_prat_dia + meta_teor_dia
-                    bucket["ferias"] += credito_total_dia  # CORREÇÃO APLICADA AQUI
+                    bucket["ferias"] += credito_total_dia
                     bucket["dias_ferias_gozados"] += 1
                     
                     total_geral_ferias_horas_abono += credito_total_dia
@@ -157,7 +180,6 @@ def calcular_motor_horas(todos_pontos, data_inicio, data_hoje, lista_meses, mese
                     faltas_teorica_debito += meta_teor_dia
 
                 # Feriados, Pontos Facultativos e demais justificativas geram a dívida natural 
-                # (A meta do dia existe, mas as horas trabalhadas são zero)
                 elif cat in ["Ausência justificada", "Licença", "Atestado", "ATESTADO", "Feriado", "Ponto facultativo"]:
                     bucket["dias_ausencia"] += 1
                     bucket["por_categoria"][cat] += horas
