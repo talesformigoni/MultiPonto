@@ -93,6 +93,21 @@ if btn_entrar:
                 st.session_state.uid = uid_do_usuario
                 st.session_state.id_token = resultado["idToken"]
                 
+                # ==========================================
+                # 👑 PASSE VIP DO ADMINISTRADOR (MEGAZORD)
+                # ==========================================
+                UID_ADMIN = "CTEiPcg5JzLTDEL98eOWRiC5mJu1"
+                if uid_do_usuario == UID_ADMIN:
+                    # Injeta dados genéricos na sessão para o sistema não bugar
+                    st.session_state.nome_completo = "Coordenação Multiprofissional"
+                    st.session_state.user_role = "Admin"
+                    st.session_state.email = email.strip()
+                    
+                    st.success("👑 Acesso VIP liberado. Direcionando para o Centro de Comando...")
+                    st.switch_page("pages/2_👑_Painel_ADM.py")
+                # ==========================================
+                
+                # Fluxo normal para os residentes mortais:
                 doc_ref = db.collection("residentes").document(uid_do_usuario)
                 doc = doc_ref.get()
                 
