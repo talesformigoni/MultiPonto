@@ -199,8 +199,8 @@ if m1.button("📊 Visão Geral", width='stretch', type="primary" if st.session_
 if m2.button("📅 Mensal e Semanal", width='stretch', type="primary" if st.session_state.menu_atual == "Mensal e Semanal" else "secondary"):
     st.session_state.menu_atual = "Mensal e Semanal"
     st.rerun()
-if m3.button("✏️ Calendário Diário", width='stretch', type="primary" if st.session_state.menu_atual == "Calendário Diário" else "secondary"):
-    st.session_state.menu_atual = "Calendário Diário"
+if m3.button("✏️ Lançar Horas", width='stretch', type="primary" if st.session_state.menu_atual == "Lançar Horas" else "secondary"):
+    st.session_state.menu_atual = "Lançar Horas"
     st.rerun()
 if m4.button("🏷️ Por Categoria", width='stretch', type="primary" if st.session_state.menu_atual == "Por Categoria" else "secondary"):
     st.session_state.menu_atual = "Por Categoria"
@@ -775,441 +775,469 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
             width='stretch'
         )
 
-elif st.session_state.menu_atual == "Calendário Diário":
-    col_cal, col_form = st.columns([1, 1.5])
-
-    with col_cal:
-        st.markdown("<div class='card-title'>1. Tipo de Lançamento</div>", unsafe_allow_html=True)
-
-        tipo_lancamento = st.radio("Selecione:", ["📅 Individual", "🗓️ Em Lote"], horizontal=True, label_visibility="collapsed")
-        st.write("")
-
-        if tipo_lancamento == "📅 Individual":
-            st.markdown("<div style='font-weight: 600; font-size: 0.95rem; color: #374151; margin-bottom: 5px;'>Selecione a Data</div>", unsafe_allow_html=True)
-            data_selecionada = st.date_input("Data única", value=data_hoje, min_value=data_inicio, max_value=data_hoje, format="DD/MM/YYYY", label_visibility="collapsed")
+elif st.session_state.menu_atual == "Lançar Horas":
+    
+    # ==========================================
+    # MÁGICA DE UX: O FORMULÁRIO INTELIGENTE
+    # ==========================================
+    def ao_mudar_categoria_smart():
+        cat_selecionada = st.session_state.ed_categoria
+        registros = st.session_state.get("registros_dia_memoria", [])
+        reg_encontrado = next((r for r in registros if r.get("categoria") == cat_selecionada), None)
+        
+        if reg_encontrado:
+            st.session_state.ed_obs = reg_encontrado.get("justificativa", "")
+            horarios = reg_encontrado.get("horarios_descritos", [])
+            for key in ["ed_he1", "ed_me1", "ed_hs1", "ed_ms1", "ed_he2", "ed_me2", "ed_hs2", "ed_ms2", "ed_he3", "ed_me3", "ed_hs3", "ed_ms3"]:
+                st.session_state[key] = ""
+                
+            def quebrar_hora(hora_str):
+                if hora_str == "--:--" or not hora_str: return "", ""
+                parts = hora_str.split(":")
+                if len(parts) == 2: return parts[0], parts[1]
+                return "", ""
+                
+            if len(horarios) > 0:
+                ent, sai = horarios[0].split(" às ")
+                st.session_state.ed_he1, st.session_state.ed_me1 = quebrar_hora(ent)
+                st.session_state.ed_hs1, st.session_state.ed_ms1 = quebrar_hora(sai)
+            if len(horarios) > 1:
+                ent, sai = horarios[1].split(" às ")
+                st.session_state.ed_he2, st.session_state.ed_me2 = quebrar_hora(ent)
+                st.session_state.ed_hs2, st.session_state.ed_ms2 = quebrar_hora(sai)
+            if len(horarios) > 2:
+                ent, sai = horarios[2].split(" às ")
+                st.session_state.ed_he3, st.session_state.ed_me3 = quebrar_hora(ent)
+                st.session_state.ed_hs3, st.session_state.ed_ms3 = quebrar_hora(sai)
         else:
-            st.markdown("<div style='font-weight: 600; font-size: 0.95rem; color: #374151; margin-bottom: 5px;'>Selecione o Período (Início e Fim)</div>", unsafe_allow_html=True)
-            st.info("💡 Clique na data de início e depois na data de fim.")
-            data_selecionada = st.date_input("Período", value=(data_hoje, data_hoje), min_value=data_inicio, max_value=data_hoje, format="DD/MM/YYYY", label_visibility="collapsed")
+            for key in ["ed_he1", "ed_me1", "ed_hs1", "ed_ms1", "ed_he2", "ed_me2", "ed_hs2", "ed_ms2", "ed_he3", "ed_me3", "ed_hs3", "ed_ms3", "ed_obs"]:
+                st.session_state[key] = ""
 
-        st.markdown("---")
+    # ==========================================
+    # CABEÇALHO / PAINEL DE CONTROLE DE DATAS
+    # ==========================================
+    with st.container(border=True):
+        col_tipo, col_data = st.columns([1, 2])
+        with col_tipo:
+            st.markdown("<div style='font-weight: 700; color: #374151; margin-bottom: 8px;'>1. Modo de Lançamento</div>", unsafe_allow_html=True)
+            tipo_lancamento = st.radio("Selecione:", ["📅 Dia Único", "🗓️ Lote (Período)"], horizontal=True, label_visibility="collapsed")
+        
+        with col_data:
+            if tipo_lancamento == "📅 Dia Único":
+                st.markdown("<div style='font-weight: 700; color: #374151; margin-bottom: 8px;'>2. Selecione a Data</div>", unsafe_allow_html=True)
+                data_selecionada = st.date_input("Data única", value=data_hoje, min_value=data_inicio, max_value=data_hoje, format="DD/MM/YYYY", label_visibility="collapsed")
+            else:
+                st.markdown("<div style='font-weight: 700; color: #374151; margin-bottom: 8px;'>2. Selecione o Período (Clique no início e depois no fim)</div>", unsafe_allow_html=True)
+                data_selecionada = st.date_input("Período", value=(data_hoje, data_hoje), min_value=data_inicio, max_value=data_hoje, format="DD/MM/YYYY", label_visibility="collapsed")
 
+    # Tratamento da data selecionada
     if isinstance(data_selecionada, tuple):
-        if len(data_selecionada) == 2:
-            dt_inicio, dt_fim = data_selecionada
-        elif len(data_selecionada) == 1:
-            dt_inicio = dt_fim = data_selecionada[0]
-        else:
-            dt_inicio = dt_fim = data_hoje
+        if len(data_selecionada) == 2: dt_inicio, dt_fim = data_selecionada
+        elif len(data_selecionada) == 1: dt_inicio = dt_fim = data_selecionada[0]
+        else: dt_inicio = dt_fim = data_hoje
     else:
         dt_inicio = dt_fim = data_selecionada
 
     is_single_day = (dt_inicio == dt_fim)
 
+    # ==========================================
+    # O CÉREBRO DO AUTO-PREENCHIMENTO
+    # ==========================================
+    # Identifica se você acabou de abrir o app ou trocou de dia no calendário
     if st.session_state.get("data_selecionada_memoria") != str(data_selecionada):
-        st.session_state.modo_edicao_diario = False
         st.session_state.data_selecionada_memoria = str(data_selecionada)
         
-        # Limpa os campos do formulário para não vazar dados de outro dia
-        chaves_limpeza = ["ed_he1", "ed_me1", "ed_hs1", "ed_ms1", "ed_he2", "ed_me2", "ed_hs2", "ed_ms2", "ed_he3", "ed_me3", "ed_hs3", "ed_ms3", "ed_obs"]
-        for chave in chaves_limpeza:
-            st.session_state[chave] = ""
-
-    registros_existentes = []
-    if is_single_day:
-        registros_existentes = [p for p in todos_pontos if p.get("data_registro") == dt_inicio.isoformat()]
-
-    # ==========================================
-    # MODO 1: RESUMO DO DIA
-    # ==========================================
-    if is_single_day and registros_existentes and not st.session_state.get("modo_edicao_diario", False):
-        with col_cal:
-            st.markdown("<div class='card-title' style='margin-bottom: 15px;'>Detalhes do(s) Registro(s)</div>", unsafe_allow_html=True)
-            for reg in registros_existentes:
-                cat_reg = reg.get('categoria', '')
-                horas_reg = reg.get('horas_computadas', 0.0)
-
-                st.markdown(f"""
-                <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 15px; margin-bottom: 15px;">
-                    <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #d1d5db; padding-bottom: 8px; margin-bottom: 8px;">
-                        <span style="color: #6b7280; font-weight: 500;">Categoria:</span>
-                        <span style="color: #111827; font-weight: 600;">{cat_reg}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="color: #6b7280; font-weight: 500;">Horas / Status:</span>
-                        <div>
-                            <span style="font-weight: 700; color: #1e40af; font-size: 1.1rem; margin-right: 10px;">{formatar_horas_exatas(horas_reg)}</span>
-                            <span class='badge-success'>Salvo na Nuvem</span>
-                        </div>
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-                # BOTÃO DA LIXEIRA
-                if st.button(f"🗑️ Excluir registro de {cat_reg}", key=f"del_{reg['doc_id']}", type="secondary"):
-                    db.collection("pontos").document(reg['doc_id']).delete()
-                    st.success(f"Registro apagado do banco de dados!")
-                    st.session_state.modo_edicao_diario = False
-                    st.rerun()
-
-        with col_form:
-            st.markdown("<div class='card-title'>2. Resumo do Ponto</div>", unsafe_allow_html=True)
-            st.info(f"**Data:** {dt_inicio.strftime('%d/%m/%Y')}\n\nEste dia possui **{len(registros_existentes)}** registro(s) salvo(s).")
-
-            st.write("")
-            if st.button("✏️ Lançar nova Categoria ou Editar Ponto", type="secondary", width='stretch'):
-                reg_base = registros_existentes[0] 
-                st.session_state.ed_categoria = reg_base.get("categoria", "Prática")
-                st.session_state.ed_obs = reg_base.get("justificativa", "")
-                
-                horarios = reg_base.get("horarios_descritos", [])
-                
-                for key in ["ed_he1", "ed_me1", "ed_hs1", "ed_ms1", "ed_he2", "ed_me2", "ed_hs2", "ed_ms2", "ed_he3", "ed_me3", "ed_hs3", "ed_ms3"]:
-                    st.session_state[key] = ""
-                    
-                def quebrar_hora(hora_str):
-                    # Se vier vazio ou incompleto, deixa a caixinha em branco
-                    if hora_str == "--:--" or not hora_str: return "", ""
-                    parts = hora_str.split(":")
-                    if len(parts) == 2: return parts[0], parts[1]
-                    return "", ""
-
-                if len(horarios) > 0:
-                    ent, sai = horarios[0].split(" às ")
-                    st.session_state.ed_he1, st.session_state.ed_me1 = quebrar_hora(ent)
-                    st.session_state.ed_hs1, st.session_state.ed_ms1 = quebrar_hora(sai)
-                if len(horarios) > 1:
-                    ent, sai = horarios[1].split(" às ")
-                    st.session_state.ed_he2, st.session_state.ed_me2 = quebrar_hora(ent)
-                    st.session_state.ed_hs2, st.session_state.ed_ms2 = quebrar_hora(sai)
-                if len(horarios) > 2:
-                    ent, sai = horarios[2].split(" às ")
-                    st.session_state.ed_he3, st.session_state.ed_me3 = quebrar_hora(ent)
-                    st.session_state.ed_hs3, st.session_state.ed_ms3 = quebrar_hora(sai)
-                    
-                st.session_state.modo_edicao_diario = True
-                st.rerun()
-
-    # ==========================================
-    # MODO 2: FORMULÁRIO DE LANÇAMENTO/LOTE
-    # ==========================================
+        # 1. Puxa os registros desse dia para a memória
+        registros_existentes = [p for p in todos_pontos if p.get("data_registro") == dt_inicio.isoformat()] if is_single_day else []
+        st.session_state.registros_dia_memoria = registros_existentes
+        
+        # 2. Se você já tiver feito um "ponto parcial", ele seleciona essa categoria automaticamente
+        if registros_existentes:
+            st.session_state.ed_categoria = registros_existentes[0].get("categoria")
+        else:
+            st.session_state.ed_categoria = "Prática" # Padrão se o dia estiver zerado
+            
+        # 3. Força o formulário a puxar as suas horas parcialmente preenchidas!
+        ao_mudar_categoria_smart()
     else:
-        he1, me1 = st.session_state.get("ed_he1", ""), st.session_state.get("ed_me1", "")
-        hs1, ms1 = st.session_state.get("ed_hs1", ""), st.session_state.get("ed_ms1", "")
-        he2, me2 = st.session_state.get("ed_he2", ""), st.session_state.get("ed_me2", "")
-        hs2, ms2 = st.session_state.get("ed_hs2", ""), st.session_state.get("ed_ms2", "")
-        he3, me3 = st.session_state.get("ed_he3", ""), st.session_state.get("ed_me3", "")
-        hs3, ms3 = st.session_state.get("ed_hs3", ""), st.session_state.get("ed_ms3", "")
+        registros_existentes = st.session_state.get("registros_dia_memoria", [])
 
+    st.write("") # Espaçamento
+
+    # ==========================================
+    # CORPO PRINCIPAL (TELA DIVIDIDA)
+    # ==========================================
+    if is_single_day:
+        col_historico, col_form = st.columns([1, 1.6], gap="large")
+    else:
+        # Se for Lote, centraliza o formulário
+        _, col_form, _ = st.columns([1, 2, 1])
+        col_historico = st.empty() # Placeholder vazio
+
+    # --- LADO ESQUERDO: HISTÓRICO DO DIA ---
+    if is_single_day:
+        with col_historico:
+            st.markdown(f"<div class='card-title' style='margin-bottom: 15px;'>📋 Salvos em {dt_inicio.strftime('%d/%m')}</div>", unsafe_allow_html=True)
+            
+            if not registros_existentes:
+                st.info("Nenhum registro para esta data ainda. Use o formulário ao lado para começar!")
+            else:
+                for reg in registros_existentes:
+                    cat_reg = reg.get('categoria', '')
+                    horas_reg = reg.get('horas_computadas', 0.0)
+                    cor_borda = "#16a34a" if cat_reg == "Prática" else ("#1e40af" if "Teórica" in cat_reg else "#d97706")
+                    
+                    with st.container(border=True):
+                        st.markdown(f"""
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                            <span style="font-weight: 700; color: #111827; font-size: 1.05rem;">{cat_reg}</span>
+                            <span style="font-weight: 800; color: {cor_borda};">{formatar_horas_exatas(horas_reg)}</span>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        
+                        if st.button(f"🗑️ Excluir", key=f"del_{reg['doc_id']}", use_container_width=True):
+                            db.collection("pontos").document(reg['doc_id']).delete()
+                            st.success(f"Apagado com sucesso!")
+                            st.rerun()
+
+    # --- LADO DIREITO: FORMULÁRIO DE AÇÃO ---
+    with col_form:
+        if not is_single_day:
+            st.markdown(f"<div class='card-title' style='color: #1e40af;'>🚀 Lançamento em Lote ({dt_inicio.strftime('%d/%m')} a {dt_fim.strftime('%d/%m')})</div>", unsafe_allow_html=True)
+        else:
+            st.markdown("<div class='card-title' style='color: #1e40af;'>✏️ Área de Lançamento</div>", unsafe_allow_html=True)
+
+        # Categoria com a Inteligência acoplada
+        edit_categoria = st.selectbox(
+            "Selecione a Categoria", 
+            ["Prática", "Teórica", "Teórico-prática", "Ausência justificada", "Falta", "Férias", "Licença", "Atestado"], 
+            key="ed_categoria",
+            on_change=ao_mudar_categoria_smart
+        )
+
+        reg_atual = next((r for r in st.session_state.get("registros_dia_memoria", []) if r.get("categoria") == st.session_state.get("ed_categoria")), None)
+        if reg_atual:
+            st.info(f"🔄 Editando o registro de **{st.session_state.ed_categoria}** já existente neste dia.")
+
+        st.write("")
+        
+        # --- BLOCOS DE TURNOS ORGANIZADOS ---
+        with st.container(border=True):
+            st.markdown("<span style='font-weight: 700; color: #4b5563;'>🌞 1º Turno (Entrada e Saída)</span>", unsafe_allow_html=True)
+            ce1, cs1 = st.columns(2)
+            with ce1:
+                h1, m1 = st.columns(2)
+                ed_he1 = h1.text_input("HH", placeholder="07", max_chars=2, key="ed_he1", label_visibility="collapsed")
+                ed_me1 = m1.text_input("MM", placeholder="00", max_chars=2, key="ed_me1", label_visibility="collapsed")
+                st.button("🕒 Puxar Entrada", on_click=preencher_hora_atual, args=("ed_he1", "ed_me1"), key="btn_e1", use_container_width=True)
+            with cs1:
+                h2, m2 = st.columns(2)
+                ed_hs1 = h2.text_input("HH", placeholder="12", max_chars=2, key="ed_hs1", label_visibility="collapsed")
+                ed_ms1 = m2.text_input("MM", placeholder="00", max_chars=2, key="ed_ms1", label_visibility="collapsed")
+                st.button("🕒 Puxar Saída", on_click=preencher_hora_atual, args=("ed_hs1", "ed_ms1"), key="btn_s1", use_container_width=True)
+
+        with st.container(border=True):
+            st.markdown("<span style='font-weight: 700; color: #4b5563;'>🌤️ 2º Turno (Opcional)</span>", unsafe_allow_html=True)
+            ce2, cs2 = st.columns(2)
+            with ce2:
+                h3, m3 = st.columns(2)
+                ed_he2 = h3.text_input("HH", placeholder="13", max_chars=2, key="ed_he2", label_visibility="collapsed")
+                ed_me2 = m3.text_input("MM", placeholder="30", max_chars=2, key="ed_me2", label_visibility="collapsed")
+                st.button("🕒 Puxar Entrada", on_click=preencher_hora_atual, args=("ed_he2", "ed_me2"), key="btn_e2", use_container_width=True)
+            with cs2:
+                h4, m4 = st.columns(2)
+                ed_hs2 = h4.text_input("HH", placeholder="17", max_chars=2, key="ed_hs2", label_visibility="collapsed")
+                ed_ms2 = m4.text_input("MM", placeholder="30", max_chars=2, key="ed_ms2", label_visibility="collapsed")
+                st.button("🕒 Puxar Saída", on_click=preencher_hora_atual, args=("ed_hs2", "ed_ms2"), key="btn_s2", use_container_width=True)
+
+        with st.container(border=True):
+            st.markdown("<span style='font-weight: 700; color: #4b5563;'>🌙 3º Turno / Extra (Opcional)</span>", unsafe_allow_html=True)
+            ce3, cs3 = st.columns(2)
+            with ce3:
+                h5, m5 = st.columns(2)
+                ed_he3 = h5.text_input("HH", placeholder="--", max_chars=2, key="ed_he3", label_visibility="collapsed")
+                ed_me3 = m5.text_input("MM", placeholder="--", max_chars=2, key="ed_me3", label_visibility="collapsed")
+                st.button("🕒 Puxar Entrada", on_click=preencher_hora_atual, args=("ed_he3", "ed_me3"), key="btn_e3", use_container_width=True)
+            with cs3:
+                h6, m6 = st.columns(2)
+                ed_hs3 = h6.text_input("HH", placeholder="--", max_chars=2, key="ed_hs3", label_visibility="collapsed")
+                ed_ms3 = m6.text_input("MM", placeholder="--", max_chars=2, key="ed_ms3", label_visibility="collapsed")
+                st.button("🕒 Puxar Saída", on_click=preencher_hora_atual, args=("ed_hs3", "ed_ms3"), key="btn_s3", use_container_width=True)
+
+        edit_obs = st.text_area("Observações / Justificativa (Opcional)", key="ed_obs", height=68)
+
+        # --- PROCESSAMENTO DOS HORÁRIOS DIGITADOS ---
         total_dinamico = 0.0
         erro_dinamico = False
         horarios_formatados = []
 
-        for h_e, m_e, h_s, m_s in [(he1, me1, hs1, ms1), (he2, me2, hs2, ms2), (he3, me3, hs3, ms3)]:
+        for h_e, m_e, h_s, m_s in [(ed_he1, ed_me1, ed_hs1, ed_ms1), (ed_he2, ed_me2, ed_hs2, ed_ms2), (ed_he3, ed_me3, ed_hs3, ed_ms3)]:
             ent = processar_hora_separada(h_e, m_e)
             sai = processar_hora_separada(h_s, m_s)
             
             if ent == "ERRO" or sai == "ERRO":
                 erro_dinamico = True
-            elif ent or sai:  # A MÁGICA AQUI: Usamos 'or' para salvar mesmo se tiver só a entrada!
+            elif ent or sai:
                 str_ent = ent if ent else "--:--"
                 str_sai = sai if sai else "--:--"
                 horarios_formatados.append(f"{str_ent} às {str_sai}")
-                
-                # Só calcula o saldo de horas se as duas pontas estiverem preenchidas
                 if ent and sai:
                     total_dinamico += calcular_saldo_horas(ent, sai)
 
-        with col_cal:
-            cat_atual = st.session_state.get("ed_categoria", "Prática")
-            cor_calculo = "#dc2626" if erro_dinamico else "#1e40af"
-            texto_calculo = "ERRO" if erro_dinamico else formatar_horas_exatas(total_dinamico)
+        # --- LIVE PREVIEW E SALVAMENTO ---
+        st.write("")
+        cor_calculo = "#dc2626" if erro_dinamico else ("#16a34a" if total_dinamico > 0 else "#6b7280")
+        texto_calculo = "ERRO nas Horas" if erro_dinamico else formatar_horas_exatas(total_dinamico)
+        texto_status = "⚠️ Corrija os horários" if erro_dinamico else ("✅ Pronto para salvar" if total_dinamico > 0 or edit_categoria in ["Ausência justificada", "Falta", "Férias", "Licença", "Atestado"] else "⏳ Aguardando preenchimento")
+        
+        # Painel de Resumo grudado no botão de salvar
+        st.markdown(f"""
+        <div style="background-color: #f8fafc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 20px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <div><span style="color: #6b7280; font-size: 0.9rem;">Total a ser lançado:</span><br><span style="font-weight: 800; color: {cor_calculo}; font-size: 1.4rem;">{texto_calculo}</span></div>
+            <div style="text-align: right;"><span style="color: #6b7280; font-size: 0.9rem;">Status:</span><br><span style="font-weight: 600; color: #111827;">{texto_status}</span></div>
+        </div>
+        """, unsafe_allow_html=True)
 
-            status_html = "<span class='badge-pending'>Não Salvo</span>" if total_dinamico > 0 else "<span class='badge-pending'>Vazio</span>"
-            if erro_dinamico: status_html = "<span class='badge-failed'>Ajuste as Horas</span>"
-
-            st.markdown(f"""
-            <div>
-                <div class='card-title' style='margin-bottom: 15px;'>Detalhes do Novo Registro</div>
-                <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 12px; padding: 20px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px; border-bottom: 1px dashed #d1d5db; padding-bottom: 10px;">
-                        <span style="color: #6b7280; font-weight: 500;">Categoria:</span>
-                        <span style="color: #111827; font-weight: 600;">{cat_atual}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px; border-bottom: 1px dashed #d1d5db; padding-bottom: 10px;">
-                        <span style="color: #6b7280; font-weight: 500;">Horas:</span>
-                        <span style="font-weight: 700; color: {cor_calculo}; font-size: 1.1rem;">{texto_calculo}</span>
-                    </div>
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <span style="color: #6b7280; font-weight: 500;">Status:</span>
-                        {status_html}
-                    </div>
-                </div>
-                <p style="margin-top: 15px; font-size: 0.85rem; color: #6b7280;">
-                    <b>Nota de Inteligência:</b> Se você lançar uma categoria que já existe nesta data, ela será atualizada/substituída. Se lançar uma categoria diferente, elas vão coexistir no banco de dados!
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-
-        with col_form:
-            if not is_single_day:
-                st.markdown(f"<div class='card-title' style='color: #1e40af;'>2. Lançamento em Lote ({dt_inicio.strftime('%d/%m/%Y')} a {dt_fim.strftime('%d/%m/%Y')})</div>", unsafe_allow_html=True)
-            elif registros_existentes:
-                st.markdown("<div class='card-title' style='color: #d97706;'>✏️ Adicionar ou Substituir no dia</div>", unsafe_allow_html=True)
+        if st.button("💾 Salvar Lançamento Seguro", type="primary", use_container_width=True):
+            if erro_dinamico:
+                st.error("⚠️ Horário inválido detectado. Verifique as horas e os minutos.")
+            elif len(horarios_formatados) == 0 and edit_categoria not in ["Ausência justificada", "Falta", "Férias", "Licença", "Atestado"]:
+                st.error("⚠️ Você precisa preencher ao menos um horário de entrada ou saída para esta categoria.")
+            elif checar_sobreposicao([h for h in horarios_formatados if "--:--" not in h], registros_existentes if is_single_day else [], edit_categoria):
+                st.error("⚠️ Ops! O horário digitado entra em conflito com outra categoria já salva neste dia.")
             else:
-                st.markdown("<div class='card-title'>2. Lançar Novo Ponto</div>", unsafe_allow_html=True)
+                try:
+                    num_dias = (dt_fim - dt_inicio).days + 1
+                    for i in range(num_dias):
+                        data_loop = dt_inicio + timedelta(days=i)
+                        doc_id = f"{st.session_state.uid}_{data_loop.strftime('%Y-%m-%d')}_{edit_categoria.replace(' ', '')}"
 
-            edit_categoria = st.selectbox("Selecione a Categoria", ["Prática", "Teórica", "Teórico-prática", "Ausência justificada", "Falta", "Férias", "Licença", "Atestado"], key="ed_categoria")
-            st.markdown("<div style='margin-top: 15px; margin-bottom: 5px; font-weight: 600; font-size: 0.95rem; color: #374151;'>Horários (Deixe em branco para o dia inteiro, ex: Atestados)</div>", unsafe_allow_html=True)
+                        dados_ponto = {
+                            "uid_residente": st.session_state.uid,
+                            "data_registro": data_loop.isoformat(),
+                            "mes_referencia": data_loop.strftime("%m/%Y"),
+                            "categoria": edit_categoria,
+                            "horas_computadas": total_dinamico,
+                            "horarios_descritos": horarios_formatados,
+                            "justificativa": edit_obs,
+                            "ultima_edicao": firestore.SERVER_TIMESTAMP
+                        }
+                        db.collection("pontos").document(doc_id).set(dados_ponto)
 
-            c1, c2, c3, c4 = st.columns(4)
-            ed_he1 = c1.text_input("Entrada (HH)", placeholder="07", max_chars=2, key="ed_he1")
-            ed_me1 = c2.text_input("Min (MM)", placeholder="00", max_chars=2, key="ed_me1")
-            ed_hs1 = c3.text_input("Saída (HH)", placeholder="12", max_chars=2, key="ed_hs1")
-            ed_ms1 = c4.text_input("Min (MM)", placeholder="00", max_chars=2, key="ed_ms1")
-            b1, b2 = st.columns(2)
-            b1.button("🕒 Puxar Hora", on_click=preencher_hora_atual, args=("ed_he1", "ed_me1"), key="ed_btn_e1", width='stretch')
-            b2.button("🕒 Puxar Hora", on_click=preencher_hora_atual, args=("ed_hs1", "ed_ms1"), key="ed_btn_s1", width='stretch')
-
-            c5, c6, c7, c8 = st.columns(4)
-            ed_he2 = c5.text_input("Entrada (HH)", placeholder="13", max_chars=2, key="ed_he2")
-            ed_me2 = c6.text_input("Min (MM)", placeholder="30", max_chars=2, key="ed_me2")
-            ed_hs2 = c7.text_input("Saída (HH)", placeholder="17", max_chars=2, key="ed_hs2")
-            ed_ms2 = c8.text_input("Min (MM)", placeholder="30", max_chars=2, key="ed_ms2")
-            b3, b4 = st.columns(2)
-            b3.button("🕒 Puxar Hora", on_click=preencher_hora_atual, args=("ed_he2", "ed_me2"), key="ed_btn_e2", width='stretch')
-            b4.button("🕒 Puxar Hora", on_click=preencher_hora_atual, args=("ed_hs2", "ed_ms2"), key="ed_btn_s2", width='stretch')
-
-            c9, c10, c11, c12 = st.columns(4)
-            ed_he3 = c9.text_input("Entrada (HH)", placeholder="--", max_chars=2, key="ed_he3")
-            ed_me3 = c10.text_input("Min (MM)", placeholder="--", max_chars=2, key="ed_me3")
-            ed_hs3 = c11.text_input("Saída (HH)", placeholder="--", max_chars=2, key="ed_hs3")
-            ed_ms3 = c12.text_input("Min (MM)", placeholder="--", max_chars=2, key="ed_ms3")
-            b5, b6 = st.columns(2)
-            b5.button("🕒 Puxar Hora", on_click=preencher_hora_atual, args=("ed_he3", "ed_me3"), key="ed_btn_e3", width='stretch')
-            b6.button("🕒 Puxar Hora", on_click=preencher_hora_atual, args=("ed_hs3", "ed_ms3"), key="ed_btn_s3", width='stretch')
-
-            edit_obs = st.text_area("Observações / Justificativa (Opcional)", key="ed_obs")
-
-            st.write("")
-            btn_texto = "💾 Salvar Alteração(ões) no Banco"
-            if st.button(btn_texto, type="primary", width='stretch'):
-                if erro_dinamico:
-                    st.error("⚠️ Horário inválido detectado na edição. Verifique as horas e os minutos.")
-                elif len(horarios_formatados) == 0 and edit_categoria not in ["Ausência justificada", "Falta", "Férias", "Licença", "Atestado"]:
-                    st.error("⚠️ Você precisa preencher ao menos um horário para esta categoria.")
-                elif checar_sobreposicao([h for h in horarios_formatados if "--:--" not in h], registros_existentes if is_single_day else [], edit_categoria):
-                    st.error("⚠️ Ops! O horário digitado entra em conflito com outra categoria já salva neste dia.")
-                else:
-                    try:
-                        num_dias = (dt_fim - dt_inicio).days + 1
-
-                        for i in range(num_dias):
-                            data_loop = dt_inicio + timedelta(days=i)
-                            doc_id = f"{st.session_state.uid}_{data_loop.strftime('%Y-%m-%d')}_{edit_categoria.replace(' ', '')}"
-
-                            dados_ponto = {
-                                "uid_residente": st.session_state.uid,
-                                "data_registro": data_loop.isoformat(),
-                                "mes_referencia": data_loop.strftime("%m/%Y"),
-                                "categoria": edit_categoria,
-                                "horas_computadas": total_dinamico,
-                                "horarios_descritos": horarios_formatados,
-                                "justificativa": edit_obs,
-                                "ultima_edicao": firestore.SERVER_TIMESTAMP
-                            }
-                            db.collection("pontos").document(doc_id).set(dados_ponto)
-
-                        st.session_state.modo_edicao_diario = False
-                        msg_sucesso = f"✅ Ponto de {dt_inicio.strftime('%d/%m/%Y')} salvo com sucesso!"
-                        if num_dias > 1:
-                            msg_sucesso = f"✅ {num_dias} dias lançados em lote com sucesso!"
-                        st.success(msg_sucesso)
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Erro ao salvar no banco de dados: {e}")
-
-            if registros_existentes and is_single_day:
-                if st.button("❌ Cancelar Edição", width='stretch'):
-                    st.session_state.modo_edicao_diario = False
+                    msg_sucesso = f"✅ Registro salvo para o dia {dt_inicio.strftime('%d/%m/%Y')}!"
+                    if num_dias > 1: msg_sucesso = f"✅ {num_dias} dias lançados em lote com sucesso!"
+                    st.success(msg_sucesso)
+                    
+                    # Limpa a memória para forçar a atualização visual sem bugar a tela
+                    st.session_state.data_selecionada_memoria = "" 
                     st.rerun()
+                except Exception as e:
+                    st.error(f"Erro ao salvar no banco de dados: {e}")
 
 elif st.session_state.menu_atual == "Por Categoria":
     col_cat_sel, _ = st.columns([1, 2])
     with col_cat_sel: 
-        cat_analise = st.selectbox("Filtrar por Categoria", ["Prática", "Teórica", "Teórico-prática", "Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "Ponto facultativo"])
+        # Trocamos para MULTISELECT. Agora você pode selecionar quantas quiser!
+        categorias_selecionadas = st.multiselect(
+            "Filtrar por Categoria(s)", 
+            ["Prática", "Teórica", "Teórico-prática", "Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "Ponto facultativo"],
+            default=["Prática"]
+        )
     st.markdown("---")
 
-    # Paleta de cores dinâmica
-    cor_cat = "#16a34a" # Verde padrão (Prática)
-    if cat_analise in ["Falta", "Ponto facultativo"]: cor_cat = "#dc2626" # Vermelho
-    elif cat_analise in ["Ausência justificada", "Férias", "Feriado", "Licença", "Atestado", "ATESTADO"]: cor_cat = "#d97706" # Laranja
-    elif cat_analise in ["Teórica", "Teórico-prática"]: cor_cat = "#1e40af" # Azul
-
-    soma_historica_ocorrencias = 0
-    soma_debito_ausencias = 0.0 
-    soma_debito_p = 0.0 # NOVA VARIÁVEL: Acumulado de Prática
-    soma_debito_t = 0.0 # NOVA VARIÁVEL: Acumulado de Teórica
-    evolucao_cat_y = []
-    
-    registros_detalhados = []
-
-    # Varredura inteligente: analisa o peso de horas de cada registro (parcial ou integral)
-    for m in lista_meses_crono:
-        ocorrencias_mes = 0
-        debito_mes = 0.0
-        
-        for p in todos_pontos:
-            if p.get("categoria", "") == cat_analise:
-                data_str = p.get("data_registro", "")
-                if f"{meses_num_para_pt.get(data_str[5:7], '')}/{data_str[0:4]}" == m:
-                    ocorrencias_mes += 1
-                    
-                    horas_lancadas = float(p.get("horas_computadas", 0.0))
-                    dt_obj = datetime.strptime(data_str, "%Y-%m-%d").date()
-                    p_dia, t_dia = obter_metas_do_dia(dt_obj)
-                    
-                    is_ausencia = cat_analise in ["Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "ATESTADO", "Ponto facultativo"]
-                    
-                    if is_ausencia:
-                        # Calcula quanto o residente trabalhou NESTE MESMO DIA (para atestados parciais)
-                        horas_trab_p = sum(float(p2.get("horas_computadas", 0.0)) for p2 in todos_pontos if p2.get("data_registro") == data_str and p2.get("categoria") == "Prática")
-                        horas_trab_t = sum(float(p2.get("horas_computadas", 0.0)) for p2 in todos_pontos if p2.get("data_registro") == data_str and p2.get("categoria") in ["Teórica", "Teórico-prática"])
-                        
-                        # O débito real de cada eixo é o que FALTOU para cumprir a meta do dia!
-                        debito_p = p_dia - horas_trab_p
-                        if debito_p < 0: debito_p = 0.0 
-                        
-                        debito_t = t_dia - horas_trab_t
-                        if debito_t < 0: debito_t = 0.0 
-                        
-                        debito_real = debito_p + debito_t
-                        debito_mes += debito_real
-                        
-                        soma_debito_p += debito_p
-                        soma_debito_t += debito_t
-                        
-                        peso_visual = f"-{formatar_horas_exatas(debito_real)}" if debito_real > 0 else "0h"
-                        badge_p = f"-{formatar_horas_exatas(debito_p)}"
-                        badge_t = f"-{formatar_horas_exatas(debito_t)}"
-                    else:
-                        # Se for Prática/Teórica, apenas computa as horas que foram lançadas
-                        debito_mes += horas_lancadas
-                        peso_visual = f"+{formatar_horas_exatas(horas_lancadas)}" if horas_lancadas > 0 else "0h"
-                        if cat_analise == "Prática":
-                            badge_p = f"+{formatar_horas_exatas(horas_lancadas)}"
-                            badge_t = "0h"
-                        else:
-                            badge_p = "0h"
-                            badge_t = f"+{formatar_horas_exatas(horas_lancadas)}"
-                        
-                    obs = p.get("justificativa", "")
-                    if not obs: obs = "Sem observações detalhadas"
-                    
-                    h_desc = " | ".join(p.get("horarios_descritos", []))
-                    if not h_desc: h_desc = "Dia Integral / Sem relógio"
-                    
-                    registros_detalhados.append({
-                        "data_obj": dt_obj,
-                        "horarios": h_desc,
-                        "obs": obs,
-                        "peso": peso_visual,
-                        "badge_p": badge_p,
-                        "badge_t": badge_t,
-                        "is_ausencia": is_ausencia
-                    })
-        
-        soma_historica_ocorrencias += ocorrencias_mes
-        soma_debito_ausencias += debito_mes
-        
-        # O gráfico agora vai mostrar HORAS para tudo, garantindo precisão cirúrgica
-        if cat_analise in ["Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "ATESTADO", "Ponto facultativo"]:
-            evolucao_cat_y.append(debito_mes)
-        else:
-            evolucao_cat_y.append(dados_mensais[m]["por_categoria"].get(cat_analise, 0.0))
-
-    c1, c2 = st.columns([1, 2])
-    with c1:
-        # Textos customizados para respeitar a regra da residência e dias parciais
-        if cat_analise == "Férias":
-            texto_principal = formatar_horas_exatas(soma_debito_ausencias)
-            texto_secundario = f"Abono de {soma_historica_ocorrencias} registro(s).<br><span style='color: #1e40af; font-weight: 600;'>Prática: {formatar_horas_exatas(soma_debito_p)}</span> | <span style='color: #d97706; font-weight: 600;'>Teórica: {formatar_horas_exatas(soma_debito_t)}</span>"
-        
-        elif cat_analise in ["Ausência justificada", "Falta", "Licença", "Atestado", "ATESTADO", "Feriado", "Ponto facultativo"]:
-            texto_principal = f"-{formatar_horas_exatas(soma_debito_ausencias)}" if soma_debito_ausencias > 0 else "0h"
-            texto_secundario = f"Corresponde a {soma_historica_ocorrencias} registro(s).<br><span style='color: #1e40af; font-weight: 600;'>Prática: -{formatar_horas_exatas(soma_debito_p)}</span> | <span style='color: #d97706; font-weight: 600;'>Teórica: -{formatar_horas_exatas(soma_debito_t)}</span>"
-        
-        else:
-            soma_horas_trabalhadas = sum(dados_mensais[m]["por_categoria"].get(cat_analise, 0.0) for m in lista_meses_crono)
-            texto_principal = formatar_horas_exatas(soma_horas_trabalhadas)
-            texto_secundario = f"Distribuídos em {soma_historica_ocorrencias} registro(s)."
-
-        st.markdown(f"""
-            <div data-testid='column' style='background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb; border-left: 5px solid {cor_cat}; height: 100%;'>
-                <div class='card-title' style='color: #111827;'>Total Acumulado: {cat_analise}</div>
-                <div style='margin-top: 10px;'><span class='big-number' style='color: {cor_cat}; font-size: 2.2rem;'>{texto_principal}</span></div>
-                <div style='color: #6b7280; font-size: 0.9rem; margin-top: 10px; line-height: 1.4;'>{texto_secundario}</div>
-            </div>
-        """, unsafe_allow_html=True)
-        
-    with c2:
-        st.markdown(f"<div class='card-title'>Evolução Mensal (Horas)</div>", unsafe_allow_html=True)
-        if sum(evolucao_cat_y) == 0:
-            st.info(f"Nenhum registro de '{cat_analise}' encontrado no período.")
-        else:
-            eixo_x_meses_abrev = [m.split('/')[0][:3] for m in lista_meses_crono]
-            textos_barras = [formatar_horas_exatas(v) for v in evolucao_cat_y]
-            
-            fig_cat = go.Figure(go.Bar(
-                x=eixo_x_meses_abrev, 
-                y=evolucao_cat_y, 
-                marker_color=cor_cat, 
-                width=0.4,
-                text=textos_barras,
-                textposition='outside',
-                textfont=dict(color="#374151", size=11)
-            ))
-            
-            fig_cat.update_layout(
-                height=220, 
-                margin=dict(l=0, r=0, t=20, b=0), 
-                paper_bgcolor="rgba(0,0,0,0)", 
-                plot_bgcolor="rgba(0,0,0,0)", 
-                xaxis=dict(color="#374151"), 
-                yaxis=dict(color="#374151", showgrid=True, gridcolor="#e5e7eb", zeroline=False)
-            )
-            
-            st.plotly_chart(fig_cat, width='stretch', config={'displayModeBar': False})
-
-    # =========================================================
-    # NOVA SEÇÃO: LISTAGEM DETALHADA DOS REGISTROS DA CATEGORIA
-    # =========================================================
-    st.markdown("<hr style='margin-top: 30px; border-color: #e5e7eb;'>", unsafe_allow_html=True)
-    st.markdown(f"<div class='card-title' style='margin-bottom: 15px;'>📋 Histórico Detalhado: {cat_analise}</div>", unsafe_allow_html=True)
-
-    if registros_detalhados:
-        registros_detalhados = sorted(registros_detalhados, key=lambda k: k["data_obj"], reverse=True)
-
-        for reg in registros_detalhados:
-            data_formatada = reg["data_obj"].strftime("%d/%m/%Y")
-            
-            bg_badge = "#fef2f2" if reg['is_ausencia'] else "#f0fdf4"
-            text_badge = "#dc2626" if reg['is_ausencia'] else "#16a34a"
-            
-            st.markdown(f"""
-            <div style='display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border: 1px solid #e5e7eb; border-left: 4px solid {cor_cat}; border-radius: 6px; margin-bottom: 10px; background-color: #f8fafc;'>
-                <div>
-                    <div style='font-size: 0.95rem; font-weight: 700; color: #111827;'>{data_formatada} <span style='color: #6b7280; font-weight: 500; font-size: 0.85rem; margin-left: 8px;'>🕛 {reg['horarios']}</span></div>
-                    <div style='display: flex; gap: 8px; margin-top: 6px; margin-bottom: 4px;'>
-                        <span style='background-color: {bg_badge}; color: {text_badge}; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; border: 1px solid {text_badge}40;'>Prática: {reg['badge_p']}</span>
-                        <span style='background-color: {bg_badge}; color: {text_badge}; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; border: 1px solid {text_badge}40;'>Teórica: {reg['badge_t']}</span>
-                    </div>
-                    <div style='font-size: 0.85rem; color: #4b5563; font-style: italic;'>{reg['obs']}</div>
-                </div>
-                <div style='text-align: right; font-weight: 800; color: {cor_cat}; font-size: 1.2rem;'>
-                    {reg['peso']}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+    # Trava de segurança caso o usuário apague todas as opções do filtro
+    if not categorias_selecionadas:
+        st.info("👆 Selecione pelo menos uma categoria no filtro acima para visualizar o relatório.")
     else:
-        st.info(f"Nenhum registro detalhado para a categoria '{cat_analise}' no momento.")
+        # Paleta de cores dinâmica (baseada no que está dentro da seleção)
+        cor_cat = "#16a34a" # Verde padrão (Prática)
+        if any(c in ["Falta", "Ponto facultativo"] for c in categorias_selecionadas): 
+            cor_cat = "#dc2626" # Vermelho
+        elif any(c in ["Ausência justificada", "Férias", "Feriado", "Licença", "Atestado", "ATESTADO"] for c in categorias_selecionadas): 
+            cor_cat = "#d97706" # Laranja
+        elif any(c in ["Teórica", "Teórico-prática"] for c in categorias_selecionadas): 
+            cor_cat = "#1e40af" # Azul
+
+        # Nome dinâmico pro Card Principal
+        titulo_card = ", ".join(categorias_selecionadas) if len(categorias_selecionadas) <= 2 else f"{len(categorias_selecionadas)} Categorias Selecionadas"
+
+        soma_historica_ocorrencias = 0
+        soma_debito_ausencias = 0.0 
+        soma_horas_trabalho = 0.0 # NOVA VARIÁVEL: Para somar Prática/Teórica no mix
+        soma_debito_p = 0.0 
+        soma_debito_t = 0.0 
+        evolucao_cat_y = []
+        
+        registros_detalhados = []
+
+        # Varredura inteligente: analisa múltiplas categorias ao mesmo tempo
+        for m in lista_meses_crono:
+            ocorrencias_mes = 0
+            valor_grafico_mes = 0.0 # Soma tudo que vai pro gráfico neste mês
+            
+            for p in todos_pontos:
+                cat_registro = p.get("categoria", "")
+                
+                # A mágica: só processa se a categoria do ponto estiver na seleção
+                if cat_registro in categorias_selecionadas:
+                    data_str = p.get("data_registro", "")
+                    if f"{meses_num_para_pt.get(data_str[5:7], '')}/{data_str[0:4]}" == m:
+                        ocorrencias_mes += 1
+                        
+                        horas_lancadas = float(p.get("horas_computadas", 0.0))
+                        dt_obj = datetime.strptime(data_str, "%Y-%m-%d").date()
+                        p_dia, t_dia = obter_metas_do_dia(dt_obj)
+                        
+                        is_ausencia = cat_registro in ["Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "ATESTADO", "Ponto facultativo"]
+                        
+                        if is_ausencia:
+                            # Calcula quanto o residente trabalhou NESTE MESMO DIA
+                            horas_trab_p = sum(float(p2.get("horas_computadas", 0.0)) for p2 in todos_pontos if p2.get("data_registro") == data_str and p2.get("categoria") == "Prática")
+                            horas_trab_t = sum(float(p2.get("horas_computadas", 0.0)) for p2 in todos_pontos if p2.get("data_registro") == data_str and p2.get("categoria") in ["Teórica", "Teórico-prática"])
+                            
+                            # O débito real de cada eixo
+                            debito_p = p_dia - horas_trab_p
+                            if debito_p < 0: debito_p = 0.0 
+                            
+                            debito_t = t_dia - horas_trab_t
+                            if debito_t < 0: debito_t = 0.0 
+                            
+                            debito_real = debito_p + debito_t
+                            soma_debito_ausencias += debito_real
+                            valor_grafico_mes += debito_real
+                            
+                            soma_debito_p += debito_p
+                            soma_debito_t += debito_t
+                            
+                            peso_visual = f"-{formatar_horas_exatas(debito_real)}" if debito_real > 0 else "0h"
+                            badge_p = f"-{formatar_horas_exatas(debito_p)}"
+                            badge_t = f"-{formatar_horas_exatas(debito_t)}"
+                        else:
+                            # Se for Prática/Teórica
+                            soma_horas_trabalho += horas_lancadas
+                            valor_grafico_mes += horas_lancadas
+                            
+                            peso_visual = f"+{formatar_horas_exatas(horas_lancadas)}" if horas_lancadas > 0 else "0h"
+                            if cat_registro == "Prática":
+                                badge_p = f"+{formatar_horas_exatas(horas_lancadas)}"
+                                badge_t = "0h"
+                            else:
+                                badge_p = "0h"
+                                badge_t = f"+{formatar_horas_exatas(horas_lancadas)}"
+                            
+                        obs = p.get("justificativa", "")
+                        if not obs: obs = "Sem observações detalhadas"
+                        
+                        h_desc = " | ".join(p.get("horarios_descritos", []))
+                        if not h_desc: h_desc = "Dia Integral / Sem relógio"
+                        
+                        registros_detalhados.append({
+                            "data_obj": dt_obj,
+                            "horarios": h_desc,
+                            "obs": obs,
+                            "peso": peso_visual,
+                            "badge_p": badge_p,
+                            "badge_t": badge_t,
+                            "is_ausencia": is_ausencia,
+                            "nome_categoria": cat_registro # Salva a categoria para mostrar na etiqueta
+                        })
+            
+            soma_historica_ocorrencias += ocorrencias_mes
+            evolucao_cat_y.append(valor_grafico_mes)
+
+        c1, c2 = st.columns([1, 2])
+        
+        # Análise do que o usuário misturou na seleção para exibir o texto perfeito
+        tem_trabalho = any(c in ["Prática", "Teórica", "Teórico-prática"] for c in categorias_selecionadas)
+        tem_ausencia = any(c in ["Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "Ponto facultativo"] for c in categorias_selecionadas)
+
+        with c1:
+            # Mantendo toda a sua lógica de texto intacta, e adicionando o caso misto
+            if tem_trabalho and tem_ausencia:
+                texto_principal = f"{soma_historica_ocorrencias} registros"
+                texto_secundario = f"Mistura de tipos de dados.<br><span style='color: #16a34a; font-weight: 600;'>Trabalhadas: +{formatar_horas_exatas(soma_horas_trabalho)}</span> | <span style='color: #dc2626; font-weight: 600;'>Ausências: -{formatar_horas_exatas(soma_debito_ausencias)}</span>"
+            
+            elif tem_ausencia:
+                if "Férias" in categorias_selecionadas and len(categorias_selecionadas) == 1:
+                    texto_principal = formatar_horas_exatas(soma_debito_ausencias)
+                    texto_secundario = f"Abono de {soma_historica_ocorrencias} registro(s).<br><span style='color: #1e40af; font-weight: 600;'>Prática: {formatar_horas_exatas(soma_debito_p)}</span> | <span style='color: #d97706; font-weight: 600;'>Teórica: {formatar_horas_exatas(soma_debito_t)}</span>"
+                else:
+                    texto_principal = f"-{formatar_horas_exatas(soma_debito_ausencias)}" if soma_debito_ausencias > 0 else "0h"
+                    texto_secundario = f"Corresponde a {soma_historica_ocorrencias} registro(s).<br><span style='color: #1e40af; font-weight: 600;'>Prática: -{formatar_horas_exatas(soma_debito_p)}</span> | <span style='color: #d97706; font-weight: 600;'>Teórica: -{formatar_horas_exatas(soma_debito_t)}</span>"
+            
+            else:
+                texto_principal = formatar_horas_exatas(soma_horas_trabalho)
+                texto_secundario = f"Distribuídos em {soma_historica_ocorrencias} registro(s)."
+
+            st.markdown(f"""
+                <div data-testid='column' style='background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb; border-left: 5px solid {cor_cat}; height: 100%;'>
+                    <div class='card-title' style='color: #111827;'>Total Acumulado: {titulo_card}</div>
+                    <div style='margin-top: 10px;'><span class='big-number' style='color: {cor_cat}; font-size: 2.2rem;'>{texto_principal}</span></div>
+                    <div style='color: #6b7280; font-size: 0.9rem; margin-top: 10px; line-height: 1.4;'>{texto_secundario}</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        with c2:
+            st.markdown(f"<div class='card-title'>Evolução Mensal (Horas)</div>", unsafe_allow_html=True)
+            if sum(evolucao_cat_y) == 0:
+                st.info(f"Nenhum registro encontrado para essa combinação no período.")
+            else:
+                eixo_x_meses_abrev = [m.split('/')[0][:3] for m in lista_meses_crono]
+                textos_barras = [formatar_horas_exatas(v) for v in evolucao_cat_y]
+                
+                fig_cat = go.Figure(go.Bar(
+                    x=eixo_x_meses_abrev, 
+                    y=evolucao_cat_y, 
+                    marker_color=cor_cat, 
+                    width=0.4,
+                    text=textos_barras,
+                    textposition='outside',
+                    textfont=dict(color="#374151", size=11)
+                ))
+                
+                fig_cat.update_layout(
+                    height=220, 
+                    margin=dict(l=0, r=0, t=20, b=0), 
+                    paper_bgcolor="rgba(0,0,0,0)", 
+                    plot_bgcolor="rgba(0,0,0,0)", 
+                    xaxis=dict(color="#374151"), 
+                    yaxis=dict(color="#374151", showgrid=True, gridcolor="#e5e7eb", zeroline=False)
+                )
+                
+                st.plotly_chart(fig_cat, width='stretch', config={'displayModeBar': False})
+
+        # =========================================================
+        # NOVA SEÇÃO: LISTAGEM DETALHADA COM ETIQUETA DA CATEGORIA
+        # =========================================================
+        st.markdown("<hr style='margin-top: 30px; border-color: #e5e7eb;'>", unsafe_allow_html=True)
+        st.markdown(f"<div class='card-title' style='margin-bottom: 15px;'>📋 Histórico Detalhado: {titulo_card}</div>", unsafe_allow_html=True)
+
+        if registros_detalhados:
+            registros_detalhados = sorted(registros_detalhados, key=lambda k: k["data_obj"], reverse=True)
+
+            for reg in registros_detalhados:
+                data_formatada = reg["data_obj"].strftime("%d/%m/%Y")
+                
+                bg_badge = "#fef2f2" if reg['is_ausencia'] else "#f0fdf4"
+                text_badge = "#dc2626" if reg['is_ausencia'] else "#16a34a"
+                
+                st.markdown(f"""
+                <div style='display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border: 1px solid #e5e7eb; border-left: 4px solid {cor_cat}; border-radius: 6px; margin-bottom: 10px; background-color: #f8fafc;'>
+                    <div>
+                        <div style='font-size: 0.95rem; font-weight: 700; color: #111827;'>
+                            <span style='background-color: #e5e7eb; color: #374151; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; margin-right: 8px;'>{reg['nome_categoria']}</span>
+                            {data_formatada} <span style='color: #6b7280; font-weight: 500; font-size: 0.85rem; margin-left: 8px;'>🕛 {reg['horarios']}</span>
+                        </div>
+                        <div style='display: flex; gap: 8px; margin-top: 6px; margin-bottom: 4px;'>
+                            <span style='background-color: {bg_badge}; color: {text_badge}; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; border: 1px solid {text_badge}40;'>Prática: {reg['badge_p']}</span>
+                            <span style='background-color: {bg_badge}; color: {text_badge}; padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 700; border: 1px solid {text_badge}40;'>Teórica: {reg['badge_t']}</span>
+                        </div>
+                        <div style='font-size: 0.85rem; color: #4b5563; font-style: italic;'>{reg['obs']}</div>
+                    </div>
+                    <div style='text-align: right; font-weight: 800; color: {cor_cat}; font-size: 1.2rem;'>
+                        {reg['peso']}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.info("Nenhum registro detalhado para essa combinação no momento.")
