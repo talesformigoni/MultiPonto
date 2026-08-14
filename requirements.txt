@@ -2,3 +2,4 @@ streamlit
 plotly
 firebase-admin
 google-cloud-firestore
+fpdf
