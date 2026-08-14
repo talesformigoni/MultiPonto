@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 from firebase_admin import auth, firestore
 from firebase_config import db
 from utils import aplicar_css, checar_login
+from calculadora_horas import obter_metas_do_dia
 
 # ==========================================
 # 1. SEGURANÇA MÁXIMA (O LEÃO DE CHÁCARA)
@@ -52,6 +53,49 @@ except Exception as e:
 # ==========================================
 # 3. NAVEGAÇÃO SUPERIOR (UX MODERNA)
 # ==========================================
+
+# ==========================================
+# UX NINJA: ESTILIZAÇÃO SUPREMA DAS ABAS
+# ==========================================
+st.markdown("""
+<style>
+    /* Espaçamento e linha de base das abas */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        border-bottom: 2px solid #e5e7eb;
+        padding-bottom: 0px;
+    }
+    /* Estilo padrão (Abas Inativas) */
+    .stTabs [data-baseweb="tab"] {
+        height: 55px;
+        background-color: #f3f4f6;
+        border-radius: 10px 10px 0 0;
+        padding: 10px 25px;
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #6b7280;
+        transition: all 0.3s ease-in-out;
+        border: 1px solid #e5e7eb;
+        border-bottom: none;
+    }
+    /* Estilo da Aba ATIVA (Selecionada) */
+    .stTabs [aria-selected="true"] {
+        background-color: #2563eb !important;
+        color: #ffffff !important;
+        border-color: #2563eb !important;
+    }
+    /* Efeito ao passar o mouse nas inativas */
+    .stTabs [data-baseweb="tab"]:hover:not([aria-selected="true"]) {
+        background-color: #e5e7eb;
+        color: #1f2937;
+    }
+    /* Esconde aquela linhazinha fina padrão do Streamlit */
+    .stTabs [data-baseweb="tab-highlight"] {
+        display: none;
+    }
+</style>
+""", unsafe_allow_html=True)
+
 # Usamos abas nativas do Streamlit para não poluir a tela e dar sensação de um "App Único"
 aba1, aba2, aba3 = st.tabs([
     "📊 Visão Geral (Raio-X)", 
@@ -88,37 +132,6 @@ with aba1:
                 if minutos == 0: return f"{sinal}{horas}h"
                 return f"{sinal}{horas}h {minutos:02d}m"
 
-            def obter_metas_do_dia_adm(data_alvo):
-                dia_semana = data_alvo.weekday() 
-                meta_pratica = 0.0
-                meta_teorica = 0.0
-
-                if dia_semana == 0:   meta_pratica = 9.0  
-                elif dia_semana == 1: meta_pratica = 12.0 
-                elif dia_semana == 2: meta_pratica = 9.0  
-                elif dia_semana == 3: meta_pratica = 9.0  
-                elif dia_semana == 4: meta_pratica = 9.0  
-                
-                quinta_da_semana = data_alvo + timedelta(days=(3 - dia_semana))
-                mes_da_semana = quinta_da_semana.month
-                semana_do_mes = (quinta_da_semana.day - 1) // 7 + 1
-                
-                if data_alvo.month == mes_da_semana:
-                    if semana_do_mes in [1, 2] and dia_semana in [0, 3]: 
-                        meta_teorica += 2.5
-
-                duracao_especifico = 3.0
-                primeira_quinta_maio = date(2026, 5, 7)
-                
-                if quinta_da_semana >= primeira_quinta_maio:
-                    if (quinta_da_semana - primeira_quinta_maio).days // 7 >= 8:
-                        duracao_especifico = 2.0
-                        
-                if dia_semana == 2:
-                    meta_teorica += duracao_especifico
-
-                return meta_pratica, meta_teorica
-
 # --- GERADOR DO PDF NUBANK (ALTA PERFORMANCE E DETALHADO) ---
             def gerar_pdf_extrato(nome, nucleo, uid_res, todos_pontos):
                 from fpdf import FPDF
@@ -144,7 +157,7 @@ with aba1:
                     d_obj = data_ini + timedelta(days=i)
                     d_str = d_obj.strftime("%Y-%m-%d")
 
-                    mp, mt = obter_metas_do_dia_adm(d_obj)
+                    mp, mt = obter_metas_do_dia(d_obj)
                     soma_meta_p += mp
                     soma_meta_t += mt
                     
@@ -407,7 +420,7 @@ with aba1:
             if dias_passados >= 0:
                 for i in range(dias_passados + 1):
                     d = data_inicio_residencia + timedelta(days=i)
-                    mp, mt = obter_metas_do_dia_adm(d)
+                    mp, mt = obter_metas_do_dia(d)
                     meta_global_pratica += mp
                     meta_global_teorica += mt
             
@@ -443,7 +456,7 @@ with aba1:
                     if d_str > ultima_data_str: ultima_data_str = d_str
                     
                     d_obj = dt.datetime.strptime(d_str, "%Y-%m-%d").date()
-                    p_dia, t_dia = obter_metas_do_dia_adm(d_obj)
+                    p_dia, t_dia = obter_metas_do_dia(d_obj)
                     
                     if cat == 'Prática': trab_p += h
                     elif cat in ['Teórica', 'Teórico-prática']: trab_t += h
@@ -519,14 +532,14 @@ with aba1:
                 
                 st.markdown("<h5 style='color: #2563eb; font-weight: 800; margin-top: 35px; font-size: 1.1rem;'>🩺 Eixo Prático (Realizado vs Meta)</h5>", unsafe_allow_html=True)
                 fig_p = go.Figure()
-                fig_p.add_trace(go.Bar(x=df_grafico['Prática (F)'], y=df_grafico['Nome'], name='Prática Realizada', orientation='h', marker_color='#3b82f6', text=df_grafico['Prática (F)'].apply(lambda x: f"{x:.0f}h"), textposition='auto', textfont=dict(size=14, color='white', weight='bold')))
+                fig_p.add_trace(go.Bar(x=df_grafico['Prática (F)'], y=df_grafico['Nome'], name='Prática Realizada', orientation='h', marker_color='#3b82f6', text=df_grafico['Prática (F)'].apply(lambda x: f"{x:.0f}h"), textposition='outside', textfont=dict(size=14, color='#3b82f6', weight='bold')))
                 fig_p.add_trace(go.Bar(x=df_grafico['Prática (M)'], y=df_grafico['Nome'], name='Meta Prática Exigida', orientation='h', marker_color='#e5e7eb', text=df_grafico['Prática (M)'].apply(lambda x: f"{x:.0f}h"), textposition='auto', textfont=dict(size=14, color='#374151', weight='bold')))
                 fig_p.update_layout(barmode='group', showlegend=True, margin=dict(l=0, r=0, t=15, b=0), height=altura_grafico, plot_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(size=14, weight='bold')), xaxis=dict(showgrid=True, gridcolor="#e5e7eb", zeroline=False), yaxis=dict(tickfont=dict(size=13, weight='bold', color='#1f2937')))
                 st.plotly_chart(fig_p, use_container_width=True, config={'displayModeBar': False})
 
                 st.markdown("<h5 style='color: #7c3aed; font-weight: 800; margin-top: 40px; font-size: 1.1rem;'>📚 Eixo Teórico (Realizado vs Meta)</h5>", unsafe_allow_html=True)
                 fig_t = go.Figure()
-                fig_t.add_trace(go.Bar(x=df_grafico['Teórica (F)'], y=df_grafico['Nome'], name='Teórica Realizada', orientation='h', marker_color='#8b5cf6', text=df_grafico['Teórica (F)'].apply(lambda x: f"{x:.0f}h"), textposition='auto', textfont=dict(size=14, color='white', weight='bold')))
+                fig_t.add_trace(go.Bar(x=df_grafico['Teórica (F)'], y=df_grafico['Nome'], name='Teórica Realizada', orientation='h', marker_color='#8b5cf6', text=df_grafico['Teórica (F)'].apply(lambda x: f"{x:.0f}h" if x > 0 else ""), textposition='outside', textfont=dict(size=14, color='#8b5cf6', weight='bold')))
                 fig_t.add_trace(go.Bar(x=df_grafico['Teórica (M)'], y=df_grafico['Nome'], name='Meta Teórica Exigida', orientation='h', marker_color='#e5e7eb', text=df_grafico['Teórica (M)'].apply(lambda x: f"{x:.0f}h"), textposition='auto', textfont=dict(size=14, color='#374151', weight='bold')))
                 fig_t.update_layout(barmode='group', showlegend=True, margin=dict(l=0, r=0, t=15, b=0), height=altura_grafico, plot_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(size=14, weight='bold')), xaxis=dict(showgrid=True, gridcolor="#e5e7eb", zeroline=False), yaxis=dict(tickfont=dict(size=13, weight='bold', color='#1f2937')))
                 st.plotly_chart(fig_t, use_container_width=True, config={'displayModeBar': False})
@@ -550,10 +563,20 @@ with aba1:
                         saldo = row['Saldo Final']
                         app_uso = row['Último Lançamento']
                         
-                        cor_saldo = "#dc2626" if saldo < 0 else "#16a34a"
-                        bg_saldo = "#fef2f2" if saldo < 0 else "#f0fdf4"
-                        icone_saldo = "🔻" if saldo < 0 else "✅"
-                        sinal_saldo = "+" if saldo > 0 else ""
+                        saldo_p_real = row['Prática (F)'] - row['Prática (M)']
+                        saldo_t_real = row['Teórica (F)'] - row['Teórica (M)']
+                        
+                        cor_p = "#dc2626" if saldo_p_real < 0 else "#2563eb"
+                        bg_p = "#fef2f2" if saldo_p_real < 0 else "#eff6ff"
+                        icone_p = "🔻" if saldo_p_real < 0 else "✅"
+                        sinal_p = "+" if saldo_p_real > 0 else ""
+                        
+                        cor_t = "#dc2626" if saldo_t_real < 0 else "#7c3aed"
+                        bg_t = "#fef2f2" if saldo_t_real < 0 else "#f5f3ff"
+                        icone_t = "🔻" if saldo_t_real < 0 else "✅"
+                        sinal_t = "+" if saldo_t_real > 0 else ""
+                        
+                        cor_borda = "#dc2626" if saldo < 0 else "#16a34a"
                         
                         if "Hoje" in app_uso or "Ontem" in app_uso:
                             cor_app, text_app = "#dcfce7", "#166534" 
@@ -567,7 +590,7 @@ with aba1:
                         
                         with col_card:
                             st.markdown(f"""
-<div style='background-color: #ffffff; border: 1px solid #e5e7eb; border-left: 6px solid {cor_saldo}; border-radius: 10px; padding: 14px; margin-bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; box-shadow: 0 2px 5px rgba(0,0,0,0.03);'>
+<div style='background-color: #ffffff; border: 1px solid #e5e7eb; border-left: 6px solid {cor_borda}; border-radius: 10px; padding: 14px; margin-bottom: 10px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; box-shadow: 0 2px 5px rgba(0,0,0,0.03);'>
     <div style='flex: 1.5; min-width: 200px; margin-right: 15px; margin-bottom: 5px;'>
         <div style='font-size: 1.1rem; font-weight: 800; color: #1f2937; margin-bottom: 6px;'>{nome}</div>
         <div style='display: flex; gap: 8px; align-items: center; flex-wrap: wrap;'>
@@ -587,9 +610,13 @@ with aba1:
             <span style='color: #111827; font-weight: 900;'>{t_feito:.1f}h</span> <span style='color: #9ca3af; font-size: 0.8rem;'>/ {t_meta:.0f}h</span>
         </div>
     </div>
-    <div style='flex: 1; min-width: 130px; text-align: right; background-color: {bg_saldo}; padding: 10px 15px; border-radius: 8px; margin-bottom: 5px;'>
-        <div style='font-size: 0.75rem; font-weight: 800; color: {cor_saldo}; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 3px;'>Saldo Global</div>
-        <div style='font-size: 1.5rem; font-weight: 900; color: {cor_saldo};'>{icone_saldo} {sinal_saldo}{saldo:.1f}h</div>
+    <div style='flex: 1; min-width: 110px; text-align: center; background-color: {bg_p}; padding: 8px 10px; border-radius: 6px; margin-right: 8px; margin-bottom: 5px;'>
+        <div style='font-size: 0.70rem; font-weight: 800; color: {cor_p}; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;'>Saldo Prática</div>
+        <div style='font-size: 1.15rem; font-weight: 900; color: {cor_p};'>{icone_p} {sinal_p}{saldo_p_real:.1f}h</div>
+    </div>
+    <div style='flex: 1; min-width: 110px; text-align: center; background-color: {bg_t}; padding: 8px 10px; border-radius: 6px; margin-bottom: 5px;'>
+        <div style='font-size: 0.70rem; font-weight: 800; color: {cor_t}; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 2px;'>Saldo Teoria</div>
+        <div style='font-size: 1.15rem; font-weight: 900; color: {cor_t};'>{icone_t} {sinal_t}{saldo_t_real:.1f}h</div>
     </div>
 </div>
                             """, unsafe_allow_html=True)
@@ -774,7 +801,7 @@ with aba3:
         st.write("")
         
         # Criação das Sub-Abas para não poluir a tela
-        sub_aba_diaria, sub_aba_mensal = st.tabs(["📅 Edição Diária", "🏦 Extrato Mensal"])
+        sub_aba_diaria, sub_aba_mensal, sub_aba_filtros = st.tabs(["📅 Edição Diária", "🏦 Extrato Mensal", "🔍 Filtro Investigativo"])
 
 # ========================================================
         # SUB-ABA 1: A MÁQUINA DO TEMPO (Injeção e Edição Diária)
@@ -987,70 +1014,21 @@ with aba3:
                 import calendar
                 from datetime import datetime, timedelta, date
                 
-                # =========================================================
-                # A SUA MATEMÁTICA OFICIAL (Copiada exatamente do seu código)
-                # =========================================================
-                def obter_metas_do_dia_adm(data_alvo):
-                    dia_semana = data_alvo.weekday() 
-                    meta_pratica = 0.0
-                    meta_teorica = 0.0
-
-                    # 1. CARGA DE PRÁTICA (Fixo)
-                    if dia_semana == 0:   meta_pratica = 9.0  
-                    elif dia_semana == 1: meta_pratica = 12.0 
-                    elif dia_semana == 2: meta_pratica = 9.0  
-                    elif dia_semana == 3: meta_pratica = 9.0  
-                    elif dia_semana == 4: meta_pratica = 9.0  
-                    elif dia_semana == 5: meta_pratica = 0.0  
-                    elif dia_semana == 6: meta_pratica = 0.0  
-
-                    # 2. CARGA TEÓRICA
-                    quinta_da_semana = data_alvo + timedelta(days=(3 - dia_semana))
-                    mes_da_semana = quinta_da_semana.month
-                    semana_do_mes = (quinta_da_semana.day - 1) // 7 + 1
-                    pertence_a_este_mes = (data_alvo.month == mes_da_semana)
-
-                    if pertence_a_este_mes:
-                        if semana_do_mes == 1:
-                            if dia_semana in [0, 3]: meta_teorica += 2.5
-                        elif semana_do_mes == 2:
-                            if dia_semana in [0, 3]: meta_teorica += 2.5
-
-                    duracao_especifico = 3.0
-                    primeira_quinta_maio = date(2026, 5, 7)
-                    
-                    if quinta_da_semana >= primeira_quinta_maio:
-                        semanas_passadas = (quinta_da_semana - primeira_quinta_maio).days // 7
-                        if semanas_passadas >= 8:
-                            duracao_especifico = 2.0
-                            
-                    if dia_semana == 2:
-                        meta_teorica += duracao_especifico
-
-                    return meta_pratica, meta_teorica
-                # =========================================================
-
-                # 1. CÁLCULO DA META DO MÊS (Usando a sua função)
+                # ==========================================
+                # 1. CÁLCULO DA META EXATA DO MÊS SELECIONADO
+                # ==========================================
                 mes_str, ano_str = mes_extrato.split('/')
                 mes_num, ano_num = int(mes_str), int(ano_str)
-                hoje = date.today()
                 
-                if ano_num == hoje.year and mes_num == hoje.month:
-                    dias_a_calcular = hoje.day # Calcula a meta só até o dia de hoje!
-                elif (ano_num > hoje.year) or (ano_num == hoje.year and mes_num > hoje.month):
-                    dias_a_calcular = 0 # Futuro não tem meta ainda
-                else:
-                    dias_a_calcular = calendar.monthrange(ano_num, mes_num)[1] # Mês fechado
-                    
+                _, dias_no_mes = calendar.monthrange(ano_num, mes_num)
                 meta_p_mes = 0.0
                 meta_t_mes = 0.0
                 
-                for d in range(1, dias_a_calcular + 1):
-                    dt_loop = date(ano_num, mes_num, d)
-                    mp, mt = obter_metas_do_dia_adm(dt_loop)
-                    meta_p_mes += mp
-                    meta_t_mes += mt
-                
+                for dia in range(1, dias_no_mes + 1):
+                    p_meta, t_meta = obter_metas_do_dia(date(ano_num, mes_num, dia))
+                    meta_p_mes += p_meta
+                    meta_t_mes += t_meta
+
                 # 2. CÁLCULO DO QUE FOI REALIZADO (O que fez de verdade)
                 trab_p = 0.0
                 trab_t = 0.0
@@ -1062,11 +1040,19 @@ with aba3:
                     data_str = pt.get("data_registro")
                     dt_obj = datetime.strptime(data_str, "%Y-%m-%d").date()
                     
-                    p_dia, t_dia = obter_metas_do_dia_adm(dt_obj)
+                    p_dia, t_dia = obter_metas_do_dia(dt_obj)
                         
-                    is_ausencia = cat in ["Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "Ponto facultativo"]
-                    
-                    if is_ausencia:
+                    # 1. TRATAMENTO DE OURO: FÉRIAS É DIREITO (Abono integral da meta do dia)
+                    if cat == "Férias":
+                        trab_p += p_dia
+                        trab_t += t_dia
+                        valor_visual_p = f"Isento (+{formatar_horas_exatas_adm(p_dia)})"
+                        valor_visual_t = f"Isento (+{formatar_horas_exatas_adm(t_dia)})"
+                        cor_linha = "#eff6ff" # Azul clarinho (Destaque de benefício)
+                        cor_texto = "#2563eb" # Azul forte
+                        
+                    # 2. AUSÊNCIAS COMUNS E FALTAS (Geram débito se não houver hora compensada no dia)
+                    elif cat in ["Ausência justificada", "Falta", "Feriado", "Licença", "Atestado", "Ponto facultativo"]:
                         horas_trab_p_no_dia = sum(float(p2.get("horas_computadas", 0.0)) for p2 in pontos_extrato if p2.get("data_registro") == data_str and p2.get("categoria") == "Prática")
                         horas_trab_t_no_dia = sum(float(p2.get("horas_computadas", 0.0)) for p2 in pontos_extrato if p2.get("data_registro") == data_str and p2.get("categoria") in ["Teórica", "Teórico-prática"])
                         
@@ -1075,8 +1061,10 @@ with aba3:
                         
                         valor_visual_p = f"-{formatar_horas_exatas_adm(deb_p)}"
                         valor_visual_t = f"-{formatar_horas_exatas_adm(deb_t)}"
-                        cor_linha = "#fef2f2"
+                        cor_linha = "#fef2f2" # Fundo avermelhado
                         cor_texto = "#dc2626"
+                        
+                    # 3. LANÇAMENTOS COMUNS DE TRABALHO
                     else:
                         if cat == "Prática": 
                             trab_p += horas
@@ -1105,7 +1093,6 @@ with aba3:
                         "cor_tx": cor_texto
                     })
 
-                # 3. MATEMÁTICA DO BANCO (Realizado - Previsto)
                 saldo_p = trab_p - meta_p_mes
                 saldo_t = trab_t - meta_t_mes
 
@@ -1178,3 +1165,189 @@ with aba3:
                         </div>
                     </div>
                     """, unsafe_allow_html=True)
+
+# ========================================================
+        # SUB-ABA 3: FILTRO INVESTIGATIVO (Busca Avançada)
+        # ========================================================
+        with sub_aba_filtros:
+            st.markdown("<h3 style='color: #374151; font-weight: 800; margin-bottom: 5px;'>🔍 Filtro Investigativo por Categoria</h3>", unsafe_allow_html=True)
+            st.markdown("<span style='color: #6b7280; font-size: 0.95rem;'>Selecione uma ou mais categorias abaixo para auditar o histórico isolado deste residente.</span><br><br>", unsafe_allow_html=True)
+            
+            opcoes_categorias = ["Feriado", "Ponto facultativo", "Falta", "Atestado", "Ausência justificada", "Licença", "Férias", "Prática", "Teórica", "Teórico-prática"]
+            
+            categorias_selecionadas = st.multiselect("Selecione as Categorias Alvo:", opcoes_categorias, placeholder="Ex: Feriado, Ponto facultativo, Atestado...")
+            
+            if categorias_selecionadas:
+                with st.spinner("Puxando capivara do residente..."):
+                    try:
+                        # Busca no banco apenas os registros deste residente que batem com as categorias escolhidas
+                        pontos_filtro_ref = db.collection("pontos").where("uid_residente", "==", uid_alvo).where("categoria", "in", categorias_selecionadas).get()
+                        pontos_filtrados = [p.to_dict() for p in pontos_filtro_ref]
+                    except Exception as e:
+                        st.error(f"Erro ao buscar dados: {e}")
+                        pontos_filtrados = []
+                    
+                    if not pontos_filtrados:
+                        st.info("Nenhuma ocorrência encontrada para as categorias selecionadas.")
+                    else:
+                        import datetime as dt
+                        # Ordenar por data decrescente (mais recente primeiro)
+                        pontos_filtrados = sorted(pontos_filtrados, key=lambda k: k.get("data_registro", ""), reverse=True)
+                        
+                        datas_unicas = set()
+                        total_trab_p, total_trab_t = 0.0, 0.0
+                        total_deb_p, total_deb_t = 0.0, 0.0
+                        total_abono_p, total_abono_t = 0.0, 0.0
+                        
+                        # --- NOVO MOTOR DE IMPACTO REAL NO BANCO DE HORAS (SEPARADO P/T) ---
+                        for pt in pontos_filtrados:
+                            cat = pt.get("categoria", "")
+                            # Normaliza categorias importadas do Excel antigo (caso estejam em maiúsculo)
+                            if cat.upper() == "ATESTADO": cat = "Atestado"
+                            elif cat.upper() == "FERIADO": cat = "Feriado"
+                            elif cat.upper() == "FALTA": cat = "Falta"
+                            elif cat.upper() == "PONTO FACULTATIVO": cat = "Ponto facultativo"
+                            
+                            horas = float(pt.get("horas_computadas", 0.0))
+                            data_str = pt.get("data_registro", "")
+                            
+                            if data_str:
+                                datas_unicas.add(data_str)
+                                dt_obj = dt.datetime.strptime(data_str, "%Y-%m-%d").date()
+                                
+                                # Puxa a meta do motor oficial separadamente
+                                p_dia, t_dia = obter_metas_do_dia(dt_obj)
+                                
+                                if cat == "Férias":
+                                    total_abono_p += p_dia
+                                    total_abono_t += t_dia
+                                elif cat in ["Ausência justificada", "Falta", "Feriado", "Licença", "Atestado", "Ponto facultativo"]:
+                                    deb_p = p_dia
+                                    deb_t = t_dia
+                                    
+                                    # Se lançou alguma hora no dia de falta, abate da dívida primeiro da prática
+                                    if horas > 0:
+                                        if deb_p >= horas: deb_p -= horas
+                                        else:
+                                            resto = horas - deb_p
+                                            deb_p = 0.0
+                                            deb_t = max(0.0, deb_t - resto)
+                                    
+                                    total_deb_p += deb_p
+                                    total_deb_t += deb_t
+                                elif cat == "Prática":
+                                    total_trab_p += horas
+                                else:
+                                    total_trab_t += horas
+
+                        # --- Montagem Visual Dinâmica do Impacto ---
+                        html_impacto = ""
+                        
+                        # Bloco Prática
+                        if total_trab_p > 0 or total_deb_p > 0 or total_abono_p > 0:
+                            html_impacto += "<div style='margin-bottom: 10px;'>"
+                            if total_trab_p > 0: html_impacto += f"<div style='font-size: 1.05rem; color: #2563eb; font-weight: 800;'>✅ +{total_trab_p:.1f}h (Prática Trabalhada)</div>"
+                            if total_deb_p > 0: html_impacto += f"<div style='font-size: 1.05rem; color: #dc2626; font-weight: 800;'>🔻 -{total_deb_p:.1f}h (Débito de Prática)</div>"
+                            if total_abono_p > 0: html_impacto += f"<div style='font-size: 1.05rem; color: #2563eb; font-weight: 800;'>🏖️ +{total_abono_p:.1f}h (Abono de Prática)</div>"
+                            html_impacto += "</div>"
+                            
+                        # Bloco Teórica
+                        if total_trab_t > 0 or total_deb_t > 0 or total_abono_t > 0:
+                            html_impacto += "<div>"
+                            if total_trab_t > 0: html_impacto += f"<div style='font-size: 1.05rem; color: #7c3aed; font-weight: 800;'>✅ +{total_trab_t:.1f}h (Teórica Trabalhada)</div>"
+                            if total_deb_t > 0: html_impacto += f"<div style='font-size: 1.05rem; color: #dc2626; font-weight: 800;'>🔻 -{total_deb_t:.1f}h (Débito de Teórica)</div>"
+                            if total_abono_t > 0: html_impacto += f"<div style='font-size: 1.05rem; color: #7c3aed; font-weight: 800;'>🏖️ +{total_abono_t:.1f}h (Abono de Teórica)</div>"
+                            html_impacto += "</div>"
+                            
+                        if not html_impacto:
+                            html_impacto = "<div style='font-size: 1.05rem; color: #6b7280; font-weight: 800;'>0.0h</div>"
+
+                        # --- KPIs do Filtro ---
+                        c1, c2 = st.columns([1, 1.8])
+                        with c1:
+                            st.markdown(f"""
+                            <div style='background-color: #fcfaee; border: 1px solid #e5e7eb; border-left: 5px solid #d97706; padding: 15px; border-radius: 8px; height: 100%;'>
+                                <div style='font-size: 0.85rem; color: #6b7280; font-weight: 700; text-transform: uppercase;'>Total de Dias (Ocorrências)</div>
+                                <div style='font-size: 1.8rem; color: #b45309; font-weight: 800;'>{len(datas_unicas)} dias</div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        with c2:
+                            st.markdown(f"""
+                            <div style='background-color: #f8fafc; border: 1px solid #e5e7eb; border-left: 5px solid #3b82f6; padding: 15px; border-radius: 8px; height: 100%; display: flex; flex-direction: column; justify-content: center;'>
+                                <div style='font-size: 0.80rem; color: #6b7280; font-weight: 700; text-transform: uppercase; margin-bottom: 4px;'>O que isso causou no Banco de Horas:</div>
+                                {html_impacto}
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        st.markdown("<hr style='border-color: #e5e7eb; margin: 25px 0 15px 0;'>", unsafe_allow_html=True)
+                        st.markdown("<h4 style='color: #374151; font-weight: 700; font-size: 1.1rem; margin-bottom: 15px;'>📋 Lista Detalhada</h4>", unsafe_allow_html=True)
+                        
+                        # --- Lista de Resultados ---
+                        for pt in pontos_filtrados:
+                            data_pt_str = pt.get("data_registro", "")
+                            cat = pt.get("categoria", "")
+                            if cat.upper() == "ATESTADO": cat = "Atestado"
+                            elif cat.upper() == "FERIADO": cat = "Feriado"
+                            elif cat.upper() == "FALTA": cat = "Falta"
+                            elif cat.upper() == "PONTO FACULTATIVO": cat = "Ponto facultativo"
+                            
+                            horas = float(pt.get("horas_computadas", 0.0))
+                            obs = pt.get("justificativa", "Sem observações adicionais.")
+                            
+                            impacto_p = ""
+                            impacto_t = ""
+                            cor_cat = "#6b7280"
+                            txt_color = "#6b7280"
+                            
+                            if data_pt_str:
+                                dt_obj = dt.datetime.strptime(data_pt_str, "%Y-%m-%d").date()
+                                p_dia, t_dia = obter_metas_do_dia(dt_obj)
+                                
+                                if cat == "Férias":
+                                    impacto_p = f"+{p_dia:.1f}h (Abono)"
+                                    impacto_t = f"+{t_dia:.1f}h (Abono)"
+                                    cor_cat = "#2563eb"
+                                    txt_color = "#2563eb"
+                                elif cat in ["Ausência justificada", "Falta", "Feriado", "Licença", "Atestado", "Ponto facultativo"]:
+                                    deb_p = p_dia
+                                    deb_t = t_dia
+                                    if horas > 0:
+                                        if deb_p >= horas: deb_p -= horas
+                                        else:
+                                            resto = horas - deb_p
+                                            deb_p = 0.0
+                                            deb_t = max(0.0, deb_t - resto)
+                                            
+                                    impacto_p = f"-{deb_p:.1f}h (Débito)"
+                                    impacto_t = f"-{deb_t:.1f}h (Débito)"
+                                    cor_cat = "#dc2626"
+                                    txt_color = "#dc2626"
+                                elif cat == "Prática":
+                                    impacto_p = f"+{horas:.1f}h (Trabalhada)"
+                                    impacto_t = "0.0h"
+                                    cor_cat = "#16a34a"
+                                    txt_color = "#16a34a"
+                                else:
+                                    impacto_p = "0.0h"
+                                    impacto_t = f"+{horas:.1f}h (Trabalhada)"
+                                    cor_cat = "#7c3aed"
+                                    txt_color = "#7c3aed"
+                            
+                                data_formatada = dt_obj.strftime("%d/%m/%Y")
+                            else:
+                                data_formatada = "Sem Data"
+                                impacto_p = "0.0h"
+                                impacto_t = "0.0h"
+                                
+                            st.markdown(f"""
+                            <div style='display: flex; justify-content: space-between; align-items: center; background-color: #ffffff; border: 1px solid #e5e7eb; padding: 12px 18px; border-radius: 8px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.02);'>
+                                <div style='flex: 1;'>
+                                    <div style='font-weight: 800; color: #1f2937; font-size: 1.05rem;'>{data_formatada} <span style='font-weight: 700; font-size: 0.75rem; background-color: {cor_cat}15; color: {cor_cat}; padding: 4px 10px; border-radius: 20px; margin-left: 10px; text-transform: uppercase;'>{cat}</span></div>
+                                    <div style='font-size: 0.9rem; color: #6b7280; margin-top: 5px; font-style: italic;'>"{obs}"</div>
+                                </div>
+                                <div style='text-align: right; min-width: 140px;'>
+                                    <div style='font-size: 0.95rem; font-weight: 800; color: {txt_color}; margin-bottom: 4px;'><span style='color: #9ca3af; font-weight: 600; font-size: 0.75rem; margin-right: 5px;'>PRÁT:</span> {impacto_p}</div>
+                                    <div style='font-size: 0.95rem; font-weight: 800; color: {txt_color};'><span style='color: #9ca3af; font-weight: 600; font-size: 0.75rem; margin-right: 5px;'>TEÓR:</span> {impacto_t}</div>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
