@@ -718,7 +718,20 @@ with aba2:
                     st.markdown(f"<div style='background-color: {bg_turma}; padding: 10px; border-radius: 8px; margin-top: 20px; margin-bottom: 15px; border-left: 5px solid {cor_turma};'><h3 style='color: {cor_turma}; margin: 0; font-size: 1.3rem; font-weight: 800;'>🎓 Turma {ano}</h3></div>", unsafe_allow_html=True)
                     
                     for prof, membros in sorted(grupos_anos[ano].items()):
-                        st.markdown(f"<div style='background-color: #f3f4f6; padding: 6px 15px; border-radius: 6px; font-weight: 800; color: #4b5563; margin-bottom: 10px; border-left: 3px solid #9ca3af; text-transform: uppercase; font-size: 0.9rem;'>Núcleo: {prof} ({len(membros)})</div>", unsafe_allow_html=True)
+                        st.markdown(f"""
+                        <div style='background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%); 
+                                    padding: 8px 15px; 
+                                    border-radius: 6px; 
+                                    font-weight: 800; 
+                                    color: white; 
+                                    margin-bottom: 10px; 
+                                    border-left: 5px solid #172554; 
+                                    text-transform: uppercase; 
+                                    font-size: 0.95rem; 
+                                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>
+                            📍 NÚCLEO: {prof} ({len(membros)})
+                        </div>
+                        """, unsafe_allow_html=True)
                         
                         for res in membros:
                             uid_res = res.get('uid')
