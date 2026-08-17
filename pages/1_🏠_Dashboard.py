@@ -25,27 +25,6 @@ aplicar_css()
 # ==========================================
 # 2. FUNÇÕES DE UI E FORMATAÇÃO
 # ==========================================
-@st.dialog("🚀 Atualização Importante: MultiPonto 2.0!")
-def mostrar_novidades_popup():
-    st.markdown("""
-    Fala, residente! O sistema acabou de ficar muito mais inteligente. Veja o que mudou:
-    
-    * 🟣 **O Extrato Nubank:** Agora a aba "Visão Geral" tem uma *Timeline* detalhada de todas as suas horas extras e dívidas dia a dia.
-    * ⏱️ **Ponto Parcial na UBS:** Bateu o ponto na entrada? Agora você pode salvar só a hora de chegada! Quando for embora, é só abrir o app de novo e preencher a saída.
-    * 🩺 **Metas Separadas:** A Prática e a Teórica agora são cobradas e exibidas separadamente para maior transparência.
-    * 📅 **Aulas Específicas:** O motor agora calcula exatamente as semanas dos Eixos Transversais e Específicos automaticamente.
-    * 🏥 **Atestados Parciais:** Se você trabalhar de manhã e pegar atestado à tarde, o sistema sabe calcular a dívida exata sem te prejudicar!
-    
-    *Aproveite a nova versão!*
-    """)
-    
-    st.write("")
-    if st.button("Entendi, vamos lá! 🎉", type="primary", width='stretch'):
-        db.collection("usuarios").document(st.session_state.uid).set(
-            {"viu_update_v2": True}, merge=True
-        )
-        st.session_state.viu_update_v2 = True
-        st.rerun()
 
 def preencher_hora_atual(chave_h, chave_m):
     """Fuso único e correto: Rondônia não observa horário de verão."""
@@ -99,20 +78,6 @@ def checar_sobreposicao(novos_horarios, registros_existentes, cat_atual):
                 if max(t_ent_ex, t_ent_nv) < min(t_sai_ex, t_sai_nv):
                     return True
     return False
-
-# ==========================================
-# 3. GATILHO DO POP-UP
-# ==========================================
-if "viu_update_v2" not in st.session_state:
-    user_doc = db.collection("usuarios").document(st.session_state.uid).get()
-    if user_doc.exists:
-        dados_user = user_doc.to_dict()
-        st.session_state.viu_update_v2 = dados_user.get("viu_update_v2", False)
-    else:
-        st.session_state.viu_update_v2 = False
-
-if not st.session_state.viu_update_v2:
-    mostrar_novidades_popup()
 
 # ==========================================
 # LÓGICA DE DATAS E CRONOGRAMA
