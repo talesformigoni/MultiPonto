@@ -7,6 +7,18 @@ from utils import aplicar_css, checar_login
 from calculadora_horas import obter_metas_do_dia
 
 # ==========================================
+# FUNÇÕES GLOBAIS DE BANCO DE DADOS
+# ==========================================
+def carregar_nucleos():
+    doc = db.collection("config").document("settings").get()
+    if doc.exists:
+        return doc.to_dict().get("nucleos", ["Enfermagem", "Odontologia", "Psicologia", "Nutrição", "Fisioterapia", "Farmácia", "Serviço Social", "Educação Física", "Outros"])
+    return ["Enfermagem", "Odontologia", "Psicologia", "Nutrição", "Fisioterapia", "Farmácia", "Serviço Social", "Educação Física", "Outros"]
+
+def salvar_nucleos(lista_nucleos):
+    db.collection("config").document("settings").set({"nucleos": lista_nucleos})
+
+# ==========================================
 # 1. SEGURANÇA MÁXIMA (O LEÃO DE CHÁCARA)
 # ==========================================
 st.set_page_config(page_title="Painel ADM | MultiPonto", layout="wide", initial_sidebar_state="collapsed")
@@ -97,10 +109,11 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Usamos abas nativas do Streamlit para não poluir a tela e dar sensação de um "App Único"
-aba1, aba2, aba3 = st.tabs([
+aba1, aba2, aba3, aba4 = st.tabs([
     "📊 Visão Geral (Raio-X)", 
     "👥 Gestão de Residentes", 
-    "⏳ Auditoria de Horas"
+    "⏳ Auditoria de Horas",
+    "📥 Central de Lançamentos"
 ])
 
 # --- MÓDULO 1: VISÃO GERAL (RAIO-X GLOBAL) ---
@@ -110,7 +123,7 @@ with aba1:
     import plotly.graph_objects as go
     import datetime as dt
     from datetime import date, timedelta
-    
+
     st.markdown("<div class='card-title' style='margin-bottom: 20px;'>📊 Centro de Comando Global (Raio-X)</div>", unsafe_allow_html=True)
     
     if not lista_residentes:
@@ -640,86 +653,190 @@ with aba1:
 # --- MÓDULO 2: GESTÃO DE RESIDENTES ---
 with aba2:
     st.markdown("<div class='card-title' style='margin-bottom: 20px;'>Gestão de Pessoal</div>", unsafe_allow_html=True)
-        
+
     col_lista, col_cadastro = st.columns([1.5, 1], gap="large")
-    
-    # --- LADO ESQUERDO: LISTA DE RESIDENTES (AGRUPADA POR NÚCLEO) ---
+
+    #Gerenciador de Núcleos
+    with st.expander("⚙️ Configurações de Núcleos Profissionais"):
+        nucleos_atuais = carregar_nucleos()
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            novo_nucleo = st.text_input("Adicionar novo núcleo:", placeholder="Ex: Terapia Ocupacional")
+        with col2:
+            st.write("<br>", unsafe_allow_html=True)
+            if st.button("➕ Adicionar"):
+                if novo_nucleo and novo_nucleo not in nucleos_atuais:
+                    nucleos_atuais.append(novo_nucleo)
+                    salvar_nucleos(nucleos_atuais)
+                    st.rerun()
+
+        st.markdown("##### Núcleos Cadastrados:")
+        # Exibe cada núcleo com um botão de exclusão
+        for n in nucleos_atuais:
+            c_label, c_del = st.columns([4, 1])
+            c_label.write(f"- {n}")
+            if c_del.button("🗑️", key=f"del_{n}"):
+                if len(nucleos_atuais) > 1:
+                    nucleos_atuais.remove(n)
+                    salvar_nucleos(nucleos_atuais)
+                    st.rerun()
+                else:
+                    st.error("Você precisa de pelo menos um núcleo.")
+
+# --- LADO ESQUERDO: LISTA DE RESIDENTES (AGRUPADA POR TURMA E NÚCLEO) ---
     with col_lista:
-        st.markdown("<h3 style='color: #374151; font-size: 1.3rem; font-weight: 700;'>📋 Equipe por Núcleo Profissional</h3>", unsafe_allow_html=True)
+        st.markdown("<h3 style='color: #374151; font-size: 1.3rem; font-weight: 700;'>📋 Equipe por Turma e Núcleo</h3>", unsafe_allow_html=True)
         
         if not lista_residentes:
             st.info("Nenhum residente cadastrado no sistema ainda.")
         else:
-            # Lógica de Agrupamento por Núcleo
-            grupos_profissoes = {}
-            for res in sorted(lista_residentes, key=lambda x: x.get('nome_completo', '')):
-                prof = res.get('profissao', 'Outros')
-                if prof not in grupos_profissoes:
-                    grupos_profissoes[prof] = []
-                grupos_profissoes[prof].append(res)
+            # Lógica de Agrupamento Triplo (Status -> Turma -> Núcleo)
+            grupos_anos = {"R1": {}, "R2": {}}
+            arquivo_morto = []
             
-            # Exibição dos Núcleos
-            for prof, membros in sorted(grupos_profissoes.items()):
-                st.markdown(f"<div style='background-color: #f3f4f6; padding: 8px 15px; border-radius: 6px; font-weight: 800; color: #4b5563; margin-top: 15px; margin-bottom: 10px; border-left: 4px solid #3b82f6; text-transform: uppercase;'>Núcleo: {prof} ({len(membros)})</div>", unsafe_allow_html=True)
+            for res in sorted(lista_residentes, key=lambda x: x.get('nome_completo', '')):
+                status_atual = res.get('status', 'Ativo') # Se não tiver status gravado, assume que está Ativo
+                ano_res = res.get('ano_residencia', 'R1')
+                prof = res.get('profissao', 'Outros')
                 
-                for res in membros:
-                    uid_res = res.get('uid')
-                    with st.container(border=True):
-                        # Card de Exibição
-                        st.markdown(f"""
-                        <div style='display: flex; justify-content: space-between; align-items: center;'>
-                            <div>
-                                <h4 style='margin: 0; color: #1e40af; font-size: 1.1rem;'>{res.get('nome_completo', 'Sem nome')}</h4>
-                                <span style='font-size: 0.85rem; color: #6b7280; font-weight: 500;'>{res.get('email', '')} | Lotação: {res.get('lotacao', 'Não informada')}</span>
-                            </div>
-                            <div style='text-align: right;'>
-                                <span style='background-color: #dbeafe; color: #1e40af; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 800;'>{res.get('perfil', 'Residente').upper()}</span>
-                            </div>
-                        </div>
-                        """, unsafe_allow_html=True)
+                if status_atual == 'Ativo':
+                    if ano_res not in grupos_anos: grupos_anos[ano_res] = {}
+                    if prof not in grupos_anos[ano_res]: grupos_anos[ano_res][prof] = []
+                    grupos_anos[ano_res][prof].append(res)
+                else:
+                    arquivo_morto.append(res)
+            
+            # ==========================================
+            # 1. EXIBIÇÃO DAS TURMAS ATIVAS
+            # ==========================================
+            for ano in ["R1", "R2"]:
+                if grupos_anos[ano]:
+                    cor_turma = "#1e3a8a" if ano == "R1" else "#047857"
+                    bg_turma = "#eff6ff" if ano == "R1" else "#ecfdf5"
+                    
+                    st.markdown(f"<div style='background-color: {bg_turma}; padding: 10px; border-radius: 8px; margin-top: 20px; margin-bottom: 15px; border-left: 5px solid {cor_turma};'><h3 style='color: {cor_turma}; margin: 0; font-size: 1.3rem; font-weight: 800;'>🎓 Turma {ano}</h3></div>", unsafe_allow_html=True)
+                    
+                    for prof, membros in sorted(grupos_anos[ano].items()):
+                        st.markdown(f"<div style='background-color: #f3f4f6; padding: 6px 15px; border-radius: 6px; font-weight: 800; color: #4b5563; margin-bottom: 10px; border-left: 3px solid #9ca3af; text-transform: uppercase; font-size: 0.9rem;'>Núcleo: {prof} ({len(membros)})</div>", unsafe_allow_html=True)
                         
-                        # Gaveta de Edição (Expander)
-                        with st.expander("⚙️ Editar Dados ou Resetar Senha"):
-                            # O formulário de edição amarrado ao UID do residente para não misturar os dados
-                            with st.form(f"form_edit_{uid_res}", border=False):
-                                e_nome = st.text_input("Nome Completo", value=res.get('nome_completo', ''))
-                                e_lotacao = st.text_input("Lotação (UBS)", value=res.get('lotacao', ''))
-                                e_preceptor = st.text_input("Preceptor(a)", value=res.get('preceptor', ''))
-                                
-                                profissoes_base = ["Enfermagem", "Odontologia", "Psicologia", "Nutrição", "Fisioterapia", "Farmácia", "Serviço Social", "Educação Física", "Outros"]
-                                idx_prof = profissoes_base.index(prof) if prof in profissoes_base else 8
-                                e_prof = st.selectbox("Núcleo / Profissão", profissoes_base, index=idx_prof)
-                                
-                                st.markdown("<span style='font-size: 0.8rem; color: #6b7280;'>O E-mail (login) não pode ser alterado por aqui por segurança.</span>", unsafe_allow_html=True)
-                                
-                                btn_salvar_edicao = st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
-                                
-                                if btn_salvar_edicao:
-                                    try:
-                                        # 1. Atualiza no Banco de Dados (Firestore)
-                                        db.collection("residentes").document(uid_res).update({
-                                            "nome_completo": e_nome.strip(),
-                                            "lotacao": e_lotacao.strip(),
-                                            "preceptor": e_preceptor.strip(),
-                                            "profissao": e_prof
-                                        })
-                                        # 2. Atualiza o nome visual no Firebase Auth
-                                        auth.update_user(uid_res, display_name=e_nome.strip())
-                                        
-                                        st.success("✅ Dados atualizados com sucesso!")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Erro ao salvar: {e}")
+                        for res in membros:
+                            uid_res = res.get('uid')
+                            ano_atual = res.get('ano_residencia', 'R1')
                             
-                            # Botão fora do formulário para Resetar a Senha
-                            if st.button(f"🔑 Resetar Senha ({e_nome.split()[0]})", key=f"reset_{uid_res}"):
-                                try:
-                                    # Força uma senha padrão e obriga a troca no próximo login
-                                    auth.update_user(uid_res, password="Mudar@123")
-                                    db.collection("residentes").document(uid_res).update({"primeiro_login": True})
-                                    st.success("✅ Senha resetada para 'Mudar@123'. O residente precisará criar uma nova senha ao logar.")
-                                except Exception as e:
-                                    st.error(f"Erro ao resetar: {e}")
+                            with st.container(border=True):
+                                # Card de Exibição
+                                st.markdown(f"""
+                                <div style='display: flex; justify-content: space-between; align-items: center;'>
+                                    <div>
+                                        <h4 style='margin: 0; color: #1f2937; font-size: 1.1rem;'>{res.get('nome_completo', 'Sem nome')}</h4>
+                                        <span style='font-size: 0.85rem; color: #6b7280; font-weight: 500;'>{res.get('email', '')} | Lotação: {res.get('lotacao', 'Não informada')}</span>
+                                    </div>
+                                    <div style='text-align: right; display: flex; gap: 8px;'>
+                                        <span style='background-color: #f3f4f6; color: #4b5563; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 800;'>{ano_atual}</span>
+                                        <span style='background-color: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 800;'>ATIVO</span>
+                                    </div>
+                                </div>
+                                """, unsafe_allow_html=True)
+                                
+                                # Gaveta de Edição Completa
+                                with st.expander("⚙️ Editar Dados ou Alterar Status"):
+                                    with st.form(f"form_edit_{uid_res}", border=False):
+                                        e_nome = st.text_input("Nome Completo", value=res.get('nome_completo', ''))
+                                        
+                                        c1, c2 = st.columns(2)
+                                        e_lotacao = c1.text_input("Lotação (UBS)", value=res.get('lotacao', ''))
+                                        e_preceptor = c2.text_input("Preceptor(a)", value=res.get('preceptor', ''))
+                                        
+                                        profissoes_base = carregar_nucleos()
+                                        idx_prof = profissoes_base.index(prof) if prof in profissoes_base else None
+                                        if idx_prof is None:
+                                            st.warning(f"⚠️ Atenção: O núcleo anterior deste residente ('{prof}') foi excluído. Vincule-o a um novo núcleo válido.")
+                                        
+                                        # Agora com 3 colunas para acomodar o Status
+                                        c3, c4, c5 = st.columns([2, 1, 1.5])
+                                        e_prof = c3.selectbox("Núcleo / Profissão", profissoes_base, index=idx_prof, placeholder="Selecione...")
+                                        e_ano = c4.selectbox("Turma", ["R1", "R2"], index=0 if ano_atual == "R1" else 1)
+                                        
+                                        status_opcoes = ["Ativo", "Egresso (Graduado)", "Desistente", "Desligado"]
+                                        e_status = c5.selectbox("Status Operacional", status_opcoes, index=0)
+                                        
+                                        st.markdown("<span style='font-size: 0.8rem; color: #6b7280;'>O E-mail (login) não pode ser alterado por segurança.</span>", unsafe_allow_html=True)
+                                        
+                                        btn_salvar_edicao = st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
+                                        
+                                        if btn_salvar_edicao:
+                                            if not e_prof:
+                                                st.error("⛔ Operação Bloqueada: Selecione um Núcleo válido antes de salvar.")
+                                            else:
+                                                try:
+                                                    db.collection("residentes").document(uid_res).update({
+                                                        "nome_completo": e_nome.strip(),
+                                                        "lotacao": e_lotacao.strip(),
+                                                        "preceptor": e_preceptor.strip(),
+                                                        "profissao": e_prof,
+                                                        "ano_residencia": e_ano,
+                                                        "status": e_status
+                                                    })
+                                                    auth.update_user(uid_res, display_name=e_nome.strip())
+                                                    st.success("✅ Dados atualizados com sucesso!")
+                                                    st.rerun()
+                                                except Exception as e:
+                                                    st.error(f"Erro ao salvar: {e}")
+                                    
+                                    if st.button(f"🔑 Resetar Senha ({e_nome.split()[0]})", key=f"reset_{uid_res}"):
+                                        try:
+                                            auth.update_user(uid_res, password="Mudar@123")
+                                            db.collection("residentes").document(uid_res).update({"primeiro_login": True})
+                                            st.success("✅ Senha resetada para 'Mudar@123'.")
+                                        except Exception as e:
+                                            st.error(f"Erro ao resetar: {e}")
+
+            # ==========================================
+            # 2. EXIBIÇÃO DO ARQUIVO INTERNO (INATIVOS)
+            # ==========================================
+            if arquivo_morto:
+                st.markdown("<hr style='border-color: #e5e7eb; margin: 40px 0 20px 0;'>", unsafe_allow_html=True)
+                with st.expander(f"🗄️ Arquivo Interno (Egressos e Inativos) - {len(arquivo_morto)} registros", expanded=False):
+                    st.markdown("<span style='font-size: 0.85rem; color: #6b7280;'>Residentes que concluíram o programa ou foram desligados. Seus dados permanecem salvos por exigência de auditoria.</span><br><br>", unsafe_allow_html=True)
+                    
+                    for res in arquivo_morto:
+                        uid_res = res.get('uid')
+                        prof = res.get('profissao', 'Outros')
+                        status_res = res.get('status', 'Inativo')
+                        
+                        cor_st = "#dc2626" if status_res in ["Desistente", "Desligado"] else "#b45309"
+                        bg_st = "#fef2f2" if status_res in ["Desistente", "Desligado"] else "#fffbeb"
+                        
+                        with st.container(border=True):
+                            st.markdown(f"""
+                            <div style='display: flex; justify-content: space-between; align-items: center; opacity: 0.7;'>
+                                <div>
+                                    <h4 style='margin: 0; color: #4b5563; font-size: 1.1rem; text-decoration: line-through;'>{res.get('nome_completo', 'Sem nome')}</h4>
+                                    <span style='font-size: 0.85rem; color: #9ca3af; font-weight: 500;'>{res.get('email', '')} | Núcleo: {prof}</span>
+                                </div>
+                                <div style='text-align: right;'>
+                                    <span style='background-color: {bg_st}; color: {cor_st}; padding: 4px 10px; border-radius: 6px; font-size: 0.75rem; font-weight: 800;'>{status_res.upper()}</span>
+                                </div>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # Mini gaveta para reativar o residente caso tenha sido um erro
+                            with st.expander("⚙️ Reativar ou Alterar Status"):
+                                with st.form(f"form_reativar_{uid_res}", border=False):
+                                    lista_status_op = ["Ativo", "Egresso (Graduado)", "Desistente", "Desligado"]
+                                    idx_st = lista_status_op.index(status_res) if status_res in lista_status_op else 1
+                                    
+                                    novo_status = st.selectbox("Mudar Status para:", lista_status_op, index=idx_st)
+                                    btn_reativar = st.form_submit_button("Atualizar Situação", type="primary")
+                                    
+                                    if btn_reativar:
+                                        try:
+                                            db.collection("residentes").document(uid_res).update({"status": novo_status})
+                                            st.success("✅ Status do residente atualizado com sucesso!")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erro ao atualizar: {e}")
 
     # --- LADO DIREITO: FORMULÁRIO DE NOVO CADASTRO ---
     with col_cadastro:
@@ -732,7 +849,11 @@ with aba2:
             n_nome = st.text_input("Nome Completo*")
             n_email = st.text_input("E-mail (Login)*")
             n_senha = st.text_input("Senha Provisória*", type="password", help="Mínimo de 6 caracteres")
-            n_profissao = st.selectbox("Profissão / Núcleo*", ["Enfermagem", "Odontologia", "Psicologia", "Nutrição", "Fisioterapia", "Farmácia", "Serviço Social", "Educação Física"])
+            
+            c1, c2 = st.columns(2)
+            n_profissao = c1.selectbox("Profissão / Núcleo*", carregar_nucleos())
+            n_ano = c2.selectbox("Classificação*", ["R1", "R2"])
+            
             n_lotacao = st.text_input("Lotação (UBS)")
             n_preceptor = st.text_input("Preceptor(a)")
             
@@ -746,7 +867,6 @@ with aba2:
                     st.error("⚠️ A senha deve ter no mínimo 6 caracteres!")
                 else:
                     try:
-                        # Injeção Dupla (Auth + Banco de Dados)
                         user_record = auth.create_user(
                             email=n_email.strip(),
                             password=n_senha,
@@ -758,6 +878,7 @@ with aba2:
                             "nome_completo": n_nome.strip(),
                             "email": n_email.strip(),
                             "profissao": n_profissao,
+                            "ano_residencia": n_ano,
                             "lotacao": n_lotacao.strip() if n_lotacao else "Não informada",
                             "preceptor": n_preceptor.strip() if n_preceptor else "Não informado",
                             "perfil": "Residente",
@@ -1351,3 +1472,200 @@ with aba3:
                                 </div>
                             </div>
                             """, unsafe_allow_html=True)
+
+# --- MÓDULO 4: CENTRAL DE LANÇAMENTOS (BULK INSERT) ---
+with aba4:
+    import datetime as dt
+    from datetime import timedelta
+    
+    st.markdown("<div class='card-title' style='margin-bottom: 5px; color: #1e3a8a;'>📥 Central de Lançamentos Múltiplos</div>", unsafe_allow_html=True)
+    st.markdown("<span style='color: #6b7280; font-size: 0.95rem;'>Módulo corporativo para inserção de ocorrências em lote, permitindo o alcance de múltiplos residentes e múltiplos dias simultaneamente.</span><br><br>", unsafe_allow_html=True)
+
+    if not lista_residentes:
+        st.warning("⚠️ O sistema não possui residentes cadastrados para realizar lançamentos.")
+    else:
+        with st.container(border=True):
+            st.markdown("<h4 style='color: #374151; font-weight: 700; font-size: 1.1rem;'>1. Definição de Alvo</h4>", unsafe_allow_html=True)
+            
+            tipo_alvo = st.radio("Selecione a abrangência do lançamento:", ["Residente Específico", "Global (Todos os Residentes)"], horizontal=True, label_visibility="collapsed")
+            
+            alvos_selecionados = []
+            if tipo_alvo == "Residente Específico":
+                dict_residentes_lote = {f"{r.get('nome_completo')} ({r.get('profissao')})": r.get('uid') for r in lista_residentes}
+                res_selecionado = st.selectbox("Selecione o Residente:", options=list(dict_residentes_lote.keys()))
+                alvos_selecionados.append(dict_residentes_lote[res_selecionado])
+            else:
+                st.info("🌐 Lançamento Global Ativado: Esta ocorrência será registrada no prontuário de TODOS os residentes cadastrados.")
+                alvos_selecionados = [r.get('uid') for r in lista_residentes]
+
+        with st.container(border=True):
+            st.markdown("<h4 style='color: #374151; font-weight: 700; font-size: 1.1rem;'>2. Parâmetros da Ocorrência</h4>", unsafe_allow_html=True)
+            
+            c_tipo_dt, c_dt = st.columns([1, 2])
+            with c_tipo_dt:
+                tipo_data = st.radio("Formato da Data:", ["Data Única", "Período (Múltiplos Dias)"])
+            with c_dt:
+                if tipo_data == "Data Única":
+                    periodo_lote = st.date_input("Selecione a Data Alvo")
+                else:
+                    periodo_lote = st.date_input("Selecione a Data Inicial e Final", value=[dt.date.today(), dt.date.today() + timedelta(days=1)])
+            
+            st.markdown("<hr style='margin: 15px 0; border-color: #e5e7eb;'>", unsafe_allow_html=True)
+            
+            st.markdown("<span style='font-size: 0.85rem; font-weight: 600; color: #374151;'>Preenchimento Expresso (Opcional):</span>", unsafe_allow_html=True)
+            acao_expressa = st.pills("Configuração Rápida:", 
+                ["Personalizado (Preencher Manualmente)", "Falta Integral", "Atestado Integral", "Feriado", "Ponto Facultativo", "Férias"], 
+                default="Personalizado (Preencher Manualmente)", 
+                label_visibility="collapsed"
+            )
+
+            with st.form("form_lote_adm", clear_on_submit=True):
+                is_express = acao_expressa != "Personalizado (Preencher Manualmente)"
+                
+                cat_padrao = "Prática"
+                if acao_expressa == "Falta Integral": cat_padrao = "Falta"
+                elif acao_expressa == "Atestado Integral": cat_padrao = "Atestado"
+                elif acao_expressa == "Feriado": cat_padrao = "Feriado"
+                elif acao_expressa == "Ponto Facultativo": cat_padrao = "Ponto facultativo"
+                elif acao_expressa == "Férias": cat_padrao = "Férias"
+                
+                opcoes_totais = ["Prática", "Teórica", "Teórico-prática", "Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "Ponto facultativo"]
+                
+                st.markdown("<div style='font-size: 0.95rem; font-weight: 600; color: #374151; margin-bottom: 5px;'>Vínculo da Categoria:</div>", unsafe_allow_html=True)
+                i_cat = st.selectbox("Categoria", opcoes_totais, index=opcoes_totais.index(cat_padrao), disabled=is_express, label_visibility="collapsed")
+                
+                st.markdown("<div style='font-size: 0.95rem; font-weight: 600; color: #374151; margin-top: 15px;'>Carga Horária (Apenas para lançamentos personalizados):</div>", unsafe_allow_html=True)
+                
+                # Campos separados por turno (Design Corporativo com Caixas e Cores)
+                c_m, c_t, c_n = st.columns(3)
+                
+                with c_m:
+                    with st.container(border=True):
+                        st.markdown("<div style='background-color: #fef9c3; padding: 8px; border-radius: 6px; text-align: center; color: #a16207; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 10px; border: 1px solid #fde047;'>☀️ MANHÃ</div>", unsafe_allow_html=True)
+                        m_ent = st.text_input("Entrada (ex: 08:00)", disabled=is_express, key="m_ent")
+                        m_sai = st.text_input("Saída (ex: 12:00)", disabled=is_express, key="m_sai")
+                        
+                with c_t:
+                    with st.container(border=True):
+                        st.markdown("<div style='background-color: #ffedd5; padding: 8px; border-radius: 6px; text-align: center; color: #c2410c; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 10px; border: 1px solid #fdba74;'>🌤️ TARDE</div>", unsafe_allow_html=True)
+                        t_ent = st.text_input("Entrada (ex: 14:00)", disabled=is_express, key="t_ent")
+                        t_sai = st.text_input("Saída (ex: 18:00)", disabled=is_express, key="t_sai")
+                        
+                with c_n:
+                    with st.container(border=True):
+                        st.markdown("<div style='background-color: #e0e7ff; padding: 8px; border-radius: 6px; text-align: center; color: #4338ca; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 10px; border: 1px solid #a5b4fc;'>🌙 NOITE</div>", unsafe_allow_html=True)
+                        n_ent = st.text_input("Entrada (ex: 19:00)", disabled=is_express, key="n_ent")
+                        n_sai = st.text_input("Saída (ex: 22:00)", disabled=is_express, key="n_sai")
+
+                st.markdown("<span style='font-size: 0.85rem; color: #6b7280;'>Ou insira o total manual diretamente (sobrepõe os turnos acima):</span>", unsafe_allow_html=True)
+                c_h, c_min = st.columns(2)
+                i_hh = c_h.text_input("Total Horas (HH)", disabled=is_express)
+                i_mm = c_min.text_input("Total Minutos (MM)", disabled=is_express)
+                
+                st.markdown("<div style='font-size: 0.95rem; font-weight: 600; color: #374151; margin-top: 15px;'>Justificativa / Observação:</div>", unsafe_allow_html=True)
+                i_obs = st.text_area("Motivo ou descrição oficial", label_visibility="collapsed")
+                
+                submit_lote = st.form_submit_button("✅ Executar Lançamento", type="primary", use_container_width=True)
+                
+                if submit_lote:
+                    # Tratamento da Data e Período de forma segura
+                    dt_inicio = dt_fim = None
+                    if tipo_data == "Data Única" and periodo_lote:
+                        dt_inicio = dt_fim = periodo_lote
+                    elif tipo_data == "Período (Múltiplos Dias)":
+                        if isinstance(periodo_lote, tuple):
+                            if len(periodo_lote) == 2:
+                                dt_inicio, dt_fim = periodo_lote
+                            elif len(periodo_lote) == 1:
+                                dt_inicio = dt_fim = periodo_lote[0]
+                    
+                    if not dt_inicio or not dt_fim:
+                        st.error("⚠️ Data inválida. Selecione o período corretamente.")
+                    else:
+                        # Motor interno simples apenas para extrair as horas digitadas e montar a string
+                        def calc_diff(ent, sai):
+                            try:
+                                h1, m1 = map(int, ent.strip().split(":"))
+                                h2, m2 = map(int, sai.strip().split(":"))
+                                min1 = h1 * 60 + m1
+                                min2 = h2 * 60 + m2
+                                if min2 < min1: min2 += 24 * 60
+                                return (min2 - min1) / 60.0, f"{ent.strip()} às {sai.strip()}"
+                            except:
+                                return 0.0, ""
+
+                        horas_finais_decimais = 0.0
+                        desc_horarios = []
+                        
+                        if is_express:
+                            horas_finais_decimais = 0.0
+                            desc_horarios.append("Integral (Lançamento Coordenação)")
+                        else:
+                            # Prioriza o campo "Total Manual"
+                            hh_val = int(i_hh) if i_hh and i_hh.isdigit() else 0
+                            mm_val = int(i_mm) if i_mm and i_mm.isdigit() else 0
+                            
+                            if hh_val > 0 or mm_val > 0:
+                                horas_finais_decimais = hh_val + (mm_val / 60.0)
+                                desc_horarios.append(f"{hh_val:02d}h {mm_val:02d}m (Total Manual)")
+                            else:
+                                # Caso o Total esteja vazio, extrai a matemática dos turnos informados
+                                if m_ent and m_sai:
+                                    h, d = calc_diff(m_ent, m_sai)
+                                    horas_finais_decimais += h
+                                    if d: desc_horarios.append(d)
+                                if t_ent and t_sai:
+                                    h, d = calc_diff(t_ent, t_sai)
+                                    horas_finais_decimais += h
+                                    if d: desc_horarios.append(d)
+                                if n_ent and n_sai:
+                                    h, d = calc_diff(n_ent, n_sai)
+                                    horas_finais_decimais += h
+                                    if d: desc_horarios.append(d)
+                                
+                                if not desc_horarios:
+                                    desc_horarios.append("Sem horários detalhados (Coordenação)")
+
+                        # Transação Batch no Firebase (Executa múltiplos envios em uma única carga)
+                        batch = db.batch()
+                        contador_ops = 0
+                        
+                        try:
+                            for uid in alvos_selecionados:
+                                data_atual = dt_inicio
+                                while data_atual <= dt_fim:
+                                    data_str_lote = data_atual.strftime("%Y-%m-%d")
+                                    mes_str_lote = data_atual.strftime("%m/%Y")
+                                    doc_id_lote = f"{uid}_{data_str_lote}_{i_cat.replace(' ', '')}"
+                                    
+                                    doc_ref = db.collection("pontos").document(doc_id_lote)
+                                    
+                                    dados_lote = {
+                                        "uid_residente": uid,
+                                        "data_registro": data_str_lote,
+                                        "mes_referencia": mes_str_lote,
+                                        "categoria": i_cat,
+                                        "horas_computadas": horas_finais_decimais,
+                                        "horarios_descritos": desc_horarios,
+                                        "justificativa": i_obs.strip() if i_obs else "Registro Oficial (Coordenação)",
+                                        "ultima_edicao": firestore.SERVER_TIMESTAMP
+                                    }
+                                    
+                                    batch.set(doc_ref, dados_lote)
+                                    contador_ops += 1
+                                    
+                                    # O limite do Firebase Batch é de 500 operações. Renovamos a cada 450.
+                                    if contador_ops >= 450:
+                                        batch.commit()
+                                        batch = db.batch()
+                                        contador_ops = 0
+                                        
+                                    data_atual += timedelta(days=1)
+                            
+                            if contador_ops > 0:
+                                batch.commit()
+                                
+                            st.success("✔️ Transação executada com sucesso! O banco de dados foi atualizado de forma centralizada.")
+                            
+                        except Exception as e:
+                            st.error(f"Erro ao processar transação: {e}")
