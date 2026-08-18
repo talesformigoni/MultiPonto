@@ -127,8 +127,21 @@ with aba1:
     st.markdown("<div class='card-title' style='margin-bottom: 20px;'>📊 Centro de Comando Global (Raio-X)</div>", unsafe_allow_html=True)
     
     if not lista_residentes:
-        st.warning("⚠️ O sistema está vazio. Cadastre residentes no Módulo 2 para ver as métricas.")
+            st.warning("⚠️ O sistema está vazio. Cadastre residentes no Módulo 2 para ver as métricas.")
     else:
+        # Novo Filtro de Status para o Raio-X
+        c_filtro, _ = st.columns([1.5, 3])
+        with c_filtro:
+            filtro_rx = st.selectbox("Filtrar Exibição da Tropa:", ["Ativos (Padrão)", "Arquivo Interno (Inativos)", "Mostrar Todos"])
+            
+        # Cria a lista filtrada baseada na escolha
+        lista_rx = []
+        for r in lista_residentes:
+            st_r = r.get('status', 'Ativo')
+            if filtro_rx == "Ativos (Padrão)" and st_r == "Ativo": lista_rx.append(r)
+            elif filtro_rx == "Arquivo Interno (Inativos)" and st_r != "Ativo": lista_rx.append(r)
+            elif filtro_rx == "Mostrar Todos": lista_rx.append(r)
+
         with st.spinner("Sincronizando Banco de Horas e Gerando Extratos..."):
             
             # =========================================================
@@ -241,6 +254,10 @@ with aba1:
                 pdf = FPDF()
                 pdf.add_page()
                 
+                # Função interna para garantir a acentuação (Bypass de segurança do FPDF)
+                def txt(texto):
+                    return str(texto).encode('latin-1', 'replace').decode('latin-1')
+                
                 # --- CAPA (DASHBOARD GERENCIAL) ---
                 pdf.set_fill_color(30, 58, 138) # Fundo Azul Escuro
                 pdf.rect(0, 0, 210, 35, 'F')
@@ -248,102 +265,289 @@ with aba1:
                 pdf.set_y(12)
                 pdf.set_font('Arial', 'B', 18)
                 pdf.set_text_color(255, 255, 255)
-                pdf.cell(0, 8, 'RELATORIO EXECUTIVO - BANCO DE HORAS', ln=1, align='C')
+                pdf.cell(0, 8, txt('RELATÓRIO EXECUTIVO - BANCO DE HORAS'), ln=1, align='C')
                 
                 pdf.set_font('Arial', '', 11)
                 pdf.set_text_color(209, 213, 219) # Cinza claro
-                pdf.cell(0, 5, f'Data da Emissao: {dt.datetime.now().strftime("%d/%m/%Y %H:%M")}', ln=1, align='C')
+                pdf.cell(0, 5, txt(f'Data da Emissão: {dt.datetime.now().strftime("%d/%m/%Y %H:%M")}'), ln=1, align='C')
                 
                 pdf.ln(15)
                 
                 # Dados do Residente
                 pdf.set_font('Arial', 'B', 14)
                 pdf.set_text_color(31, 41, 55)
-                pdf.cell(0, 6, f"Residente: {nome}", ln=1)
+                pdf.cell(0, 6, txt(f"Residente: {nome}"), ln=1)
                 pdf.set_font('Arial', '', 11)
                 pdf.set_text_color(107, 114, 128)
-                pdf.cell(0, 6, f"Nucleo Profissional: {nucleo}", ln=1)
+                pdf.cell(0, 6, txt(f"Núcleo Profissional: {nucleo}"), ln=1)
                 
-                pdf.ln(10)
+                # --- NOVO DASHBOARD EXECUTIVO DO PDF ---
                 
-                # --- PARÂMETROS GERAIS (GRÁFICOS NATIVOS NO PDF) ---
+                # 1. Agrega estatísticas por categoria (MOTOR CORRETO - IGUAL AO FILTRO INVESTIGATIVO)
+                cat_stats = {}
+                
+                for pt in pontos_res:
+                    c = pt.get('categoria', 'Outros')
+                    if c.upper() == "ATESTADO": c = "Atestado"
+                    elif c.upper() == "FERIADO": c = "Feriado"
+                    elif c.upper() == "FALTA": c = "Falta"
+                    elif c.upper() == "PONTO FACULTATIVO": c = "Ponto facultativo"
+                    elif c.upper() == "FÉRIAS": c = "Férias"
+                    elif c.upper() == "AUSÊNCIA JUSTIFICADA": c = "Ausência justificada"
+                    elif c.upper() == "LICENÇA": c = "Licença"
+                    
+                    if c not in cat_stats: 
+                        cat_stats[c] = {'horas_trab': 0.0, 'ocorrencias': 0, 'debito_p': 0.0, 'debito_t': 0.0}
+                        
+                    horas_comp = float(pt.get('horas_computadas', 0.0))
+                    cat_stats[c]['horas_trab'] += horas_comp
+                    cat_stats[c]['ocorrencias'] += 1
+
+                    # LÓGICA DE AUDITORIA REAL: Cruzando a data exata com o motor de metas
+                    if c in ["Ausência justificada", "Falta", "Feriado", "Licença", "Atestado", "Ponto facultativo"]:
+                        data_str = pt.get("data_registro", "")
+                        if data_str:
+                            dt_obj = dt.datetime.strptime(data_str, "%Y-%m-%d").date()
+                            p_dia, t_dia = obter_metas_do_dia(dt_obj)
+                            
+                            deb_p = p_dia
+                            deb_t = t_dia
+                            
+                            # Se lançou alguma hora no dia de falta/atestado, abate da dívida primeiro da prática
+                            if horas_comp > 0:
+                                if deb_p >= horas_comp: 
+                                    deb_p -= horas_comp
+                                else:
+                                    resto = horas_comp - deb_p
+                                    deb_p = 0.0
+                                    deb_t = max(0.0, deb_t - resto)
+                                    
+                            cat_stats[c]['debito_p'] += deb_p
+                            cat_stats[c]['debito_t'] += deb_t
+
+                pdf.ln(5)
                 pdf.set_font('Arial', 'B', 12)
                 pdf.set_text_color(55, 65, 81)
-                pdf.cell(0, 8, "PARAMETROS GERAIS ACUMULADOS (ATE HOJE)", border='B', ln=1)
-                pdf.ln(6)
+                pdf.cell(0, 8, txt("1. SALDOS ACUMULADOS (PRÁTICA E TEÓRICA)"), border='B', ln=1)
+                pdf.ln(4)
+                
+                saldo_p_real = soma_trab_p - soma_meta_p
+                saldo_t_real = soma_trab_t - soma_meta_t
+                saldo_global = saldo_p_real + saldo_t_real
+                
+                y_saldos = pdf.get_y()
+                
+                # --- BOX: SALDO PRÁTICA ---
+                pdf.set_fill_color(243, 244, 246)
+                pdf.rect(10, y_saldos, 60, 18, 'F')
+                pdf.set_y(y_saldos + 2)
+                pdf.set_x(10)
+                pdf.set_font('Arial', 'B', 8)
+                pdf.set_text_color(107, 114, 128)
+                pdf.cell(60, 5, txt("SALDO PRÁTICA"), align='C', ln=1)
+                pdf.set_x(10)
+                pdf.set_font('Arial', 'B', 12)
+                if saldo_p_real >= 0:
+                    pdf.set_text_color(22, 163, 74)
+                    pdf.cell(60, 8, f"+{formatar_horas_adm_pdf(saldo_p_real)}", align='C', ln=1)
+                else:
+                    pdf.set_text_color(220, 38, 38)
+                    pdf.cell(60, 8, f"-{formatar_horas_adm_pdf(abs(saldo_p_real))} (Falta)", align='C', ln=1)
+
+                # --- BOX: SALDO TEÓRICA ---
+                pdf.set_y(y_saldos)
+                pdf.set_x(75)
+                pdf.set_fill_color(243, 244, 246)
+                pdf.rect(75, y_saldos, 60, 18, 'F')
+                pdf.set_y(y_saldos + 2)
+                pdf.set_x(75)
+                pdf.set_font('Arial', 'B', 8)
+                pdf.set_text_color(107, 114, 128)
+                pdf.cell(60, 5, txt("SALDO TEÓRICA"), align='C', ln=1)
+                pdf.set_x(75)
+                pdf.set_font('Arial', 'B', 12)
+                if saldo_t_real >= 0:
+                    pdf.set_text_color(22, 163, 74)
+                    pdf.cell(60, 8, f"+{formatar_horas_adm_pdf(saldo_t_real)}", align='C', ln=1)
+                else:
+                    pdf.set_text_color(220, 38, 38)
+                    pdf.cell(60, 8, f"-{formatar_horas_adm_pdf(abs(saldo_t_real))} (Falta)", align='C', ln=1)
+
+                # --- BOX: SALDO GLOBAL ---
+                pdf.set_y(y_saldos)
+                pdf.set_x(140)
+                cor_bg_global = (220, 252, 231) if saldo_global >= 0 else (254, 226, 226)
+                pdf.set_fill_color(*cor_bg_global)
+                pdf.rect(140, y_saldos, 60, 18, 'F')
+                pdf.set_y(y_saldos + 2)
+                pdf.set_x(140)
+                pdf.set_font('Arial', 'B', 8)
+                pdf.set_text_color(31, 41, 55)
+                pdf.cell(60, 5, txt("SALDO GLOBAL"), align='C', ln=1)
+                pdf.set_x(140)
+                pdf.set_font('Arial', 'B', 14)
+                if saldo_global >= 0:
+                    pdf.set_text_color(22, 101, 52) 
+                    pdf.cell(60, 8, f"+{formatar_horas_adm_pdf(saldo_global)}", align='C', ln=1)
+                else:
+                    pdf.set_text_color(153, 27, 27) 
+                    pdf.cell(60, 8, f"-{formatar_horas_adm_pdf(abs(saldo_global))}", align='C', ln=1)
+
+                pdf.ln(8)
+                
+                # --- PROGRESSO GRÁFICO ---
+                pdf.set_font('Arial', 'B', 12)
+                pdf.set_text_color(55, 65, 81)
+                pdf.cell(0, 8, txt("2. CUMPRIMENTO DE METAS (PROGRESSO)"), border='B', ln=1)
+                pdf.ln(4)
                 
                 def desenhar_barra_progresso(pdf_obj, titulo, realizado, meta, cor_rgb, y_pos):
                     pdf_obj.set_y(y_pos)
-                    pdf_obj.set_font('Arial', 'B', 10)
+                    pdf_obj.set_font('Arial', 'B', 9)
                     pdf_obj.set_text_color(75, 85, 99)
-                    pdf_obj.cell(50, 6, titulo, border=0)
+                    pdf_obj.cell(40, 6, txt(titulo), border=0)
                     
-                    # Matemática da barra
                     largura_maxima = 100
                     porcentagem = (realizado / meta) if meta > 0 else 0
-                    if porcentagem > 1: porcentagem = 1.0 # Trava em 100% no desenho
+                    if porcentagem > 1: porcentagem = 1.0 
                     largura_preenchida = largura_maxima * porcentagem
                     
-                    # Desenho Fundo (Cinza)
                     pdf_obj.set_fill_color(229, 231, 235)
-                    pdf_obj.rect(60, y_pos + 1.5, largura_maxima, 4, 'F')
+                    pdf_obj.rect(50, y_pos + 1.5, largura_maxima, 4, 'F')
                     
-                    # Desenho Preenchimento (Cor dinâmica)
                     pdf_obj.set_fill_color(*cor_rgb)
-                    pdf_obj.rect(60, y_pos + 1.5, largura_preenchida, 4, 'F')
+                    pdf_obj.rect(50, y_pos + 1.5, largura_preenchida, 4, 'F')
                     
-                    # Textos
-                    pdf_obj.set_x(165)
-                    pdf_obj.set_font('Arial', 'B', 10)
+                    pdf_obj.set_x(155)
+                    pdf_obj.set_font('Arial', 'B', 9)
                     pdf_obj.set_text_color(31, 41, 55)
-                    pdf_obj.cell(30, 6, f"{formatar_horas_adm_pdf(realizado)} / {formatar_horas_adm_pdf(meta)}", border=0, ln=1)
+                    porc_str = f"{(realizado/meta*100):.1f}%" if meta > 0 else "0%"
+                    pdf_obj.cell(45, 6, f"{formatar_horas_adm_pdf(realizado)} / {formatar_horas_adm_pdf(meta)} ({porc_str})", border=0, ln=1)
 
-                # Desenha Eixo Prático
-                desenhar_barra_progresso(pdf, "Eixo Pratico:", soma_trab_p, soma_meta_p, (37, 99, 235), pdf.get_y())
-                pdf.ln(3)
-                # Desenha Eixo Teórico
-                desenhar_barra_progresso(pdf, "Eixo Teorico:", soma_trab_t, soma_meta_t, (139, 92, 246), pdf.get_y())
+                desenhar_barra_progresso(pdf, "Eixo Prático:", soma_trab_p, soma_meta_p, (37, 99, 235), pdf.get_y())
+                pdf.ln(2)
+                desenhar_barra_progresso(pdf, "Eixo Teórico:", soma_trab_t, soma_meta_t, (139, 92, 246), pdf.get_y())
                 
-                pdf.ln(8)
+                pdf.ln(6)
                 
-                # Card de Saldo Final
-                saldo_global = acum_p + acum_t
-                cor_saldo_final = (22, 163, 74) if saldo_global >= 0 else (220, 38, 38)
-                pdf.set_fill_color(243, 244, 246)
-                pdf.rect(10, pdf.get_y(), 190, 20, 'F')
-                
-                pdf.set_y(pdf.get_y() + 5)
-                pdf.set_x(15)
+# --- MATRIZ DE CATEGORIAS (DESIGN PREMIUM E AUDITORIA REAL) ---
                 pdf.set_font('Arial', 'B', 12)
-                pdf.set_text_color(75, 85, 99)
-                pdf.cell(90, 10, "SALDO GLOBAL DO RESIDENTE:", border=0)
+                pdf.set_text_color(55, 65, 81)
+                pdf.cell(0, 8, txt("3. DISTRIBUIÇÃO POR CATEGORIA (OCORRÊNCIAS TOTAIS)"), border='B', ln=1)
+                pdf.ln(4)
                 
-                pdf.set_font('Arial', 'B', 16)
-                pdf.set_text_color(*cor_saldo_final)
-                sinal_g = "+" if saldo_global > 0 else ""
-                pdf.cell(90, 10, f"{sinal_g}{formatar_horas_adm_pdf(saldo_global)}", border=0, align='R', ln=1)
-
-                pdf.ln(10)
-                pdf.set_font('Arial', 'I', 9)
+                # Paleta completa incluindo Licenças e Ausências Justificadas
+                paleta_pdf = {
+                    "PRÁTICA": {"cor": (22, 163, 74), "bg": (220, 252, 231)},
+                    "TEÓRICA": {"cor": (139, 92, 246), "bg": (243, 232, 255)},
+                    "TEÓRICO-PRÁTICA": {"cor": (202, 138, 4), "bg": (254, 240, 138)},
+                    "ATESTADO": {"cor": (234, 88, 12), "bg": (255, 237, 213)},
+                    "FALTA": {"cor": (220, 38, 38), "bg": (254, 226, 226)},
+                    "FÉRIAS": {"cor": (2, 132, 199), "bg": (224, 242, 254)},
+                    "FERIADO": {"cor": (30, 64, 175), "bg": (219, 234, 254)},
+                    "PONTO FACULTATIVO": {"cor": (13, 148, 136), "bg": (204, 251, 241)},
+                    "AUSÊNCIA JUSTIFICADA": {"cor": (234, 179, 8), "bg": (254, 249, 195)},
+                    "LICENÇA": {"cor": (14, 165, 233), "bg": (224, 242, 254)}
+                }
+                
+                col_w = 63
+                x_start = 10
+                col_index = 0
+                
+                start_y = pdf.get_y()
+                
+                for cat, dados in sorted(cat_stats.items(), key=lambda item: item[1]['ocorrencias'], reverse=True):
+                    cat_upper = str(cat).upper()
+                    estilo = paleta_pdf.get(cat_upper, {"cor": (107, 114, 128), "bg": (243, 244, 246)})
+                    
+                    x_pos = x_start + (col_index * col_w)
+                    
+                    # 1. Fundo do Card
+                    pdf.set_fill_color(248, 250, 252)
+                    pdf.rect(x_pos, start_y, col_w - 3, 16, 'F')
+                    
+                    # 2. Borda Lateral Colorida
+                    pdf.set_fill_color(*estilo["cor"])
+                    pdf.rect(x_pos, start_y, 1.5, 16, 'F')
+                    
+                    # 3. Badge (Etiqueta de Fundo Colorido)
+                    pdf.set_fill_color(*estilo["bg"])
+                    pdf.rect(x_pos + 3, start_y + 1.5, col_w - 9, 4.5, 'F')
+                    
+                    # 4. Texto do Título
+                    pdf.set_xy(x_pos + 3, start_y + 1.5)
+                    pdf.set_font('Arial', 'B', 6.5)
+                    pdf.set_text_color(*estilo["cor"])
+                    pdf.cell(col_w - 9, 4.5, txt(cat_upper), border=0, ln=0, align='C')
+                    
+                    # 5. LÓGICA DE EXIBIÇÃO DE AUDITORIA
+                    pdf.set_xy(x_pos + 3, start_y + 7.5)
+                    pdf.set_text_color(31, 41, 55)
+                    
+                    if cat_upper in ["PRÁTICA", "TEÓRICA", "TEÓRICO-PRÁTICA"]:
+                        # Exibe horas normais trabalhadas
+                        pdf.set_font('Arial', 'B', 9)
+                        horas_str = formatar_horas_adm_pdf(dados['horas_trab'])
+                        pdf.cell(col_w - 9, 4, txt(f"{horas_str}"), border=0, ln=0, align='C')
+                        
+                    elif cat_upper == "FÉRIAS":
+                        # Férias não geram débito, geram Abono Oficial
+                        pdf.set_font('Arial', 'B', 7.5)
+                        pdf.set_text_color(2, 132, 199)
+                        pdf.cell(col_w - 9, 4, txt("Abono Integral (Férias)"), border=0, ln=0, align='C')
+                        
+                    else:
+                        # Para ausências que geram DÍVIDA
+                        pdf.set_font('Arial', 'B', 6.5)
+                        deb_p = dados.get('debito_p', 0.0)
+                        deb_t = dados.get('debito_t', 0.0)
+                        
+                        str_dp = formatar_horas_adm_pdf(deb_p).replace(" ", "")
+                        str_dt = formatar_horas_adm_pdf(deb_t).replace(" ", "")
+                        
+                        if deb_p == 0 and deb_t == 0:
+                            pdf.cell(col_w - 9, 4, txt("S/ Débito (Fora de Escala)"), border=0, ln=0, align='C')
+                        else:
+                            # Adicionando o sinal de MENOS vermelho visualmente
+                            pdf.set_text_color(220, 38, 38)
+                            pdf.cell(col_w - 9, 4, txt(f"Débito: -{str_dp}(P) | -{str_dt}(T)"), border=0, ln=0, align='C')
+                    
+                    # 6. Cômputo Exato de Dias
+                    pdf.set_xy(x_pos + 3, start_y + 12)
+                    pdf.set_font('Arial', '', 7)
+                    pdf.set_text_color(107, 114, 128)
+                    pdf.cell(col_w - 9, 3, txt(f"Em {dados['ocorrencias']} dia(s) de registro"), border=0, ln=0, align='C')
+                    
+                    col_index += 1
+                    if col_index == 3:
+                        col_index = 0
+                        start_y += 18 
+                        pdf.set_y(start_y)
+                
+                if col_index != 0:
+                    start_y += 18
+                    pdf.set_y(start_y)
+                    
+                pdf.ln(2)
+                pdf.set_font('Arial', 'I', 8)
                 pdf.set_text_color(156, 163, 175)
-                pdf.multi_cell(0, 5, "Nota: O detalhamento abaixo oculta os dias com meta perfeitamente batida para facilitar a leitura da auditoria.")
-                pdf.ln(5)
+                pdf.multi_cell(0, 4, txt("Nota: O detalhamento acima compila as horas computadas e as DÍVIDAS exatas geradas por ausências. Dias perfeitamente batidos sem ocorrências extras são ocultados do extrato abaixo."))
+                pdf.ln(3)
 
                 # ========================================================
                 # EXTRATO DIVIDIDO POR MESES
                 # ========================================================
                 for mes, itens_mes in extrato_por_mes.items():
-                    # Quebra página se estiver muito no fim
                     if pdf.get_y() > 240: pdf.add_page()
                     
                     pdf.ln(5)
-                    pdf.set_fill_color(243, 244, 246) # Fundo do cabeçalho do mês
+                    pdf.set_fill_color(243, 244, 246)
                     pdf.rect(10, pdf.get_y(), 190, 8, 'F')
                     pdf.set_font('Arial', 'B', 11)
                     pdf.set_text_color(55, 65, 81)
                     pdf.set_y(pdf.get_y() + 1.5)
                     pdf.set_x(12)
-                    pdf.cell(0, 5, f"COMPETENCIA: {mes}", border=0, ln=1)
+                    pdf.cell(0, 5, txt(f"COMPETÊNCIA: {mes}"), border=0, ln=1)
                     pdf.ln(5)
 
                     for item in itens_mes:
@@ -351,30 +555,30 @@ with aba1:
 
                         pdf.set_font('Arial', 'B', 9)
                         pdf.set_text_color(107, 114, 128)
-                        pdf.cell(0, 5, f"{item['data_str']} - {item['horarios']}", ln=1)
+                        pdf.cell(0, 5, txt(f"{item['data_str']} - {item['horarios']}"), ln=1)
 
                         if item['saldo_dia'] > 0:
                             cor_titulo = (22, 163, 74)
-                            titulo = "Credito de Horas / Horas Extras"
+                            titulo = "Crédito de Horas / Horas Extras"
                         elif item['saldo_dia'] < 0:
                             cor_titulo = (220, 38, 38)
-                            titulo = "Debito de Horas / Falta" if item['ausencia'] == 'Falta' else "Debito de Horas"
+                            titulo = "Débito de Horas / Falta" if item['ausencia'] == 'Falta' else "Débito de Horas"
                         else:
                             cor_titulo = (30, 64, 175)
-                            titulo = f"Movimentacao ({item['ausencia']})" if item['ausencia'] else "Meta Batida"
+                            titulo = f"Movimentação ({item['ausencia']})" if item['ausencia'] else "Meta Batida"
 
                         y_blocos = pdf.get_y()
 
                         # Esquerda
                         pdf.set_text_color(*cor_titulo)
                         pdf.set_font('Arial', 'B', 10)
-                        pdf.cell(120, 5, titulo, border=0, ln=1)
+                        pdf.cell(120, 5, txt(titulo), border=0, ln=1)
                         
                         pdf.set_font('Arial', '', 8)
                         pdf.set_text_color(107, 114, 128)
-                        str_p = f"Pratica: {formatar_horas_adm_pdf(item['trab_p'])} (Meta: {formatar_horas_adm_pdf(item['meta_p'])})"
-                        str_t = f"Teorica: {formatar_horas_adm_pdf(item['trab_t'])} (Meta: {formatar_horas_adm_pdf(item['meta_t'])})"
-                        pdf.cell(120, 5, f"{str_p}  |  {str_t}", border=0, ln=1)
+                        str_p = f"Prática: {formatar_horas_adm_pdf(item['trab_p'])} (Meta: {formatar_horas_adm_pdf(item['meta_p'])})"
+                        str_t = f"Teórica: {formatar_horas_adm_pdf(item['trab_t'])} (Meta: {formatar_horas_adm_pdf(item['meta_t'])})"
+                        pdf.cell(120, 5, txt(f"{str_p}  |  {str_t}"), border=0, ln=1)
                         
                         y_esquerda = pdf.get_y()
 
@@ -389,7 +593,7 @@ with aba1:
                         pdf.set_x(130)
                         pdf.set_font('Arial', '', 8)
                         pdf.set_text_color(107, 114, 128)
-                        pdf.cell(70, 4, "Acumulado Geral:", ln=1, align='R')
+                        pdf.cell(70, 4, txt("Acumulado Geral:"), ln=1, align='R')
                         
                         pdf.set_x(130)
                         pdf.set_font('Arial', 'B', 9)
@@ -403,13 +607,13 @@ with aba1:
                         if item['acum_p'] >= 0: pdf.set_text_color(37, 99, 235)
                         else: pdf.set_text_color(220, 38, 38)
                         sinal_p = "+" if item['acum_p'] > 0 else ""
-                        pdf.cell(70, 3.5, f"Pratica: {sinal_p}{formatar_horas_adm_pdf(item['acum_p'])}", ln=1, align='R')
+                        pdf.cell(70, 3.5, txt(f"Prática: {sinal_p}{formatar_horas_adm_pdf(item['acum_p'])}"), ln=1, align='R')
 
                         pdf.set_x(130)
                         if item['acum_t'] >= 0: pdf.set_text_color(139, 92, 246)
                         else: pdf.set_text_color(220, 38, 38)
                         sinal_t = "+" if item['acum_t'] > 0 else ""
-                        pdf.cell(70, 3.5, f"Teorica: {sinal_t}{formatar_horas_adm_pdf(item['acum_t'])}", ln=1, align='R')
+                        pdf.cell(70, 3.5, txt(f"Teórica: {sinal_t}{formatar_horas_adm_pdf(item['acum_t'])}"), ln=1, align='R')
 
                         y_direita = pdf.get_y()
                         pdf.set_y(max(y_esquerda, y_direita))
@@ -451,7 +655,7 @@ with aba1:
             residentes_desatualizados = 0
             residentes_no_vermelho = 0
             
-            for res in lista_residentes:
+            for res in lista_rx:
                 uid = res.get('uid')
                 nome = res.get('nome_completo', 'Desconhecido')
                 prof = res.get('profissao', 'Outros')
@@ -526,7 +730,7 @@ with aba1:
             with c1:
                 st.markdown(f"<div style='background-color: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e5e7eb; border-left: 5px solid #3b82f6;'><div style='color: #6b7280; font-weight: 700; font-size: 0.85rem; text-transform: uppercase;'>Meta por Residente</div><div style='color: #1e3a8a; font-size: 2.2rem; font-weight: 800; margin-top: 5px;'>{meta_global_total:,.1f}h</div><div style='color: #6b7280; font-size: 0.8rem; margin-top: 5px;'>Acumulado até hoje</div></div>", unsafe_allow_html=True)
             with c2:
-                media_tropa = total_horas_realizadas / len(lista_residentes) if len(lista_residentes) > 0 else 0
+                media_tropa = total_horas_realizadas / len(lista_rx) if len(lista_rx) > 0 else 0
                 cor_media = "#16a34a" if media_tropa >= meta_global_total else "#d97706"
                 st.markdown(f"<div style='background-color: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e5e7eb; border-left: 5px solid {cor_media};'><div style='color: #6b7280; font-weight: 700; font-size: 0.85rem; text-transform: uppercase;'>Média Trabalhada</div><div style='color: {cor_media}; font-size: 2.2rem; font-weight: 800; margin-top: 5px;'>{media_tropa:,.1f}h</div><div style='color: #6b7280; font-size: 0.8rem; margin-top: 5px;'>O que a tropa entregou</div></div>", unsafe_allow_html=True)
             with c3:
@@ -834,8 +1038,8 @@ with aba2:
                             </div>
                             """, unsafe_allow_html=True)
                             
-                            # Mini gaveta para reativar o residente caso tenha sido um erro
-                            with st.expander("⚙️ Reativar ou Alterar Status"):
+                            # Mini gaveta para reativar ou excluir o residente
+                            with st.expander("⚙️ Reativar, Alterar Status ou Excluir"):
                                 with st.form(f"form_reativar_{uid_res}", border=False):
                                     lista_status_op = ["Ativo", "Egresso (Graduado)", "Desistente", "Desligado"]
                                     idx_st = lista_status_op.index(status_res) if status_res in lista_status_op else 1
@@ -850,6 +1054,31 @@ with aba2:
                                             st.rerun()
                                         except Exception as e:
                                             st.error(f"Erro ao atualizar: {e}")
+                                
+                                # ==========================================
+                                # ZONA DE PERIGO: EXCLUSÃO PERMANENTE
+                                # ==========================================
+                                st.markdown("<hr style='border-color: #fca5a5; margin: 15px 0;'>", unsafe_allow_html=True)
+                                st.markdown("<span style='color: #dc2626; font-weight: 800;'>⚠️ Zona de Perigo: Exclusão Permanente</span>", unsafe_allow_html=True)
+                                st.markdown("<span style='color: #ef4444; font-size: 0.85rem;'>Atenção: Esta ação apagará a ficha do residente e revogará seu acesso (Login) permanentemente.</span>", unsafe_allow_html=True)
+                                
+                                checkbox_confirmar = st.checkbox(f"Sim, tenho certeza que desejo excluir o cadastro de {res.get('nome_completo', 'este residente')}.", key=f"check_del_{uid_res}")
+                                
+                                if checkbox_confirmar:
+                                    if st.button("🗑️ Excluir Residente Definitivamente", type="primary", key=f"btn_excluir_{uid_res}"):
+                                        try:
+                                            # 1. Remove a ficha do banco de dados (Firestore)
+                                            db.collection("residentes").document(uid_res).delete()
+                                            # 2. Remove o acesso de login do Firebase (Auth)
+                                            try:
+                                                auth.delete_user(uid_res)
+                                            except Exception as auth_e:
+                                                st.warning(f"Residente removido do banco, mas houve um aviso no painel de autenticação: {auth_e}")
+                                            
+                                            st.success("✅ Residente obliterado com sucesso do sistema!")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Erro ao excluir residente: {e}")
 
     # --- LADO DIREITO: FORMULÁRIO DE NOVO CADASTRO ---
     with col_cadastro:
