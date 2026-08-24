@@ -4,16 +4,26 @@ import plotly.graph_objects as go
 from firebase_admin import auth, firestore
 from firebase_config import db
 from utils import aplicar_css, checar_login
-from calculadora_horas import obter_metas_do_dia
+from calculadora_horas import obter_metas_do_dia, calcular_motor_horas
 
 # ==========================================
 # FUNÇÕES GLOBAIS DE BANCO DE DADOS
 # ==========================================
+@st.cache_data(ttl=300, show_spinner=False)
 def carregar_nucleos():
     doc = db.collection("config").document("settings").get()
     if doc.exists:
-        return doc.to_dict().get("nucleos", ["Enfermagem", "Odontologia", "Psicologia", "Nutrição", "Fisioterapia", "Farmácia", "Serviço Social", "Educação Física", "Outros"])
-    return ["Enfermagem", "Odontologia", "Psicologia", "Nutrição", "Fisioterapia", "Farmácia", "Serviço Social", "Educação Física", "Outros"]
+        return doc.to_dict().get(
+            "nucleos",
+            ["Enfermagem", "Odontologia", "Psicologia", "Nutrição",
+             "Fisioterapia", "Farmácia", "Serviço Social",
+             "Educação Física", "Outros"]
+        )
+    return [
+        "Enfermagem", "Odontologia", "Psicologia", "Nutrição",
+        "Fisioterapia", "Farmácia", "Serviço Social",
+        "Educação Física", "Outros"
+    ]
 
 def salvar_nucleos(lista_nucleos):
     db.collection("config").document("settings").set({"nucleos": lista_nucleos})
@@ -50,13 +60,21 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # --- BUSCA GLOBAL DE RESIDENTES (ANTES DAS ABAS) ---
-try:
+@st.cache_data(ttl=60, show_spinner=False)
+def carregar_residentes_adm():
     residentes_ref = db.collection("residentes").get()
-    lista_residentes = []
+    lista = []
+
     for doc in residentes_ref:
         dados = doc.to_dict()
-        dados["uid"] = doc.id 
-        lista_residentes.append(dados)
+        dados["uid"] = doc.id
+        lista.append(dados)
+
+    return lista
+
+
+try:
+    lista_residentes = carregar_residentes_adm()
 except Exception as e:
     st.error(f"Erro ao buscar residentes globais: {e}")
     lista_residentes = []
@@ -145,8 +163,18 @@ with aba1:
         with st.spinner("Sincronizando Banco de Horas e Gerando Extratos..."):
             
             # =========================================================
-            # MOTOR DE HORAS E PDF
+            # PREPARAÇÃO PARA O MOTOR CENTRAL
             # =========================================================
+            data_inicio_residencia = dt.date(2026, 3, 2)
+            hoje = dt.date.today()
+            
+            meses_num_para_pt = {
+                "01": "JANEIRO", "02": "FEVEREIRO", "03": "MARÇO", "04": "ABRIL",
+                "05": "MAIO", "06": "JUNHO", "07": "JULHO", "08": "AGOSTO",
+                "09": "SETEMBRO", "10": "OUTUBRO", "11": "NOVEMBRO", "12": "DEZEMBRO"
+            }
+            lista_meses = [f"{meses_num_para_pt[f'{m:02d}']}/{ano}" for ano in range(2026, 2031) for m in range(1, 13)]
+
             def formatar_horas_adm_pdf(horas_decimais):
                 sinal = "-" if horas_decimais < 0 else ""
                 horas_decimais = abs(horas_decimais)
@@ -158,10 +186,20 @@ with aba1:
                 if minutos == 0: return f"{sinal}{horas}h"
                 return f"{sinal}{horas}h {minutos:02d}m"
 
-# --- GERADOR DO PDF NUBANK (ALTA PERFORMANCE E DETALHADO) ---
-            def gerar_pdf_extrato(nome, nucleo, uid_res, todos_pontos):
+            # --- GERADOR DO PDF NUBANK (ALTA PERFORMANCE E DETALHADO) ---
+            def gerar_pdf_extrato(nome, nucleo, uid_res, todos_pontos, motor_res):
                 from fpdf import FPDF
                 
+                # 🚀 PUXANDO A VERDADE ABSOLUTA DO MOTOR
+                soma_meta_p = motor_res["esperado"]["pratica"]
+                soma_meta_t = motor_res["esperado"]["teorica"]
+                soma_trab_p = motor_res["cumprido"]["pratica"]
+                soma_trab_t = motor_res["cumprido"]["teorica"]
+                saldo_p_real = motor_res["saldos"]["pratica"]
+                saldo_t_real = motor_res["saldos"]["teorica"]
+                saldo_global = motor_res["saldos"]["acumulado"]
+
+                # Constrói apenas as linhas do extrato (Ledger) para a parte visual do PDF
                 pontos_res = [p for p in todos_pontos if p.get('uid_residente') == uid_res]
                 pontos_por_data = {}
                 for pt in pontos_res:
@@ -169,24 +207,15 @@ with aba1:
                     if d not in pontos_por_data: pontos_por_data[d] = []
                     pontos_por_data[d].append(pt)
 
-                data_ini = date(2026, 3, 2)
-                hoje = date.today()
-                dias = (hoje - data_ini).days
-
+                dias = (hoje - data_inicio_residencia).days
                 acum_p, acum_t = 0.0, 0.0
-                soma_trab_p, soma_trab_t = 0.0, 0.0
-                soma_meta_p, soma_meta_t = 0.0, 0.0
-                
                 historico = []
 
                 for i in range(dias + 1):
-                    d_obj = data_ini + timedelta(days=i)
+                    d_obj = data_inicio_residencia + timedelta(days=i)
                     d_str = d_obj.strftime("%Y-%m-%d")
 
                     mp, mt = obter_metas_do_dia(d_obj)
-                    soma_meta_p += mp
-                    soma_meta_t += mt
-                    
                     pts_dia = pontos_por_data.get(d_str, [])
 
                     trab_p, trab_t = 0.0, 0.0
@@ -213,10 +242,6 @@ with aba1:
                         elif ausencia_nome == 'Falta': pass
                         else: debito_p, debito_t = 0.0, 0.0
 
-                    # Adiciona aos totais reais do residente
-                    soma_trab_p += credito_p
-                    soma_trab_t += credito_t
-
                     saldo_dia_p = credito_p - debito_p
                     saldo_dia_t = credito_t - debito_t
                     saldo_total = saldo_dia_p + saldo_dia_t
@@ -238,7 +263,6 @@ with aba1:
                             'ausencia': ausencia_nome
                         })
 
-                # Ordena e agrupa por mês
                 historico.sort(key=lambda x: x['data_obj'], reverse=True)
                 
                 meses_pt = ["", "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO"]
@@ -626,34 +650,35 @@ with aba1:
                 if isinstance(out, str): return out.encode('latin-1', 'replace')
                 return bytes(out)
 
-            # CALCULA A META GLOBAL (Do dia 02/03/2026 até HOJE)
-            data_inicio_residencia = date(2026, 3, 2)
-            hoje = date.today()
-            
-            meta_global_pratica = 0.0
-            meta_global_teorica = 0.0
-            
-            dias_passados = (hoje - data_inicio_residencia).days
-            if dias_passados >= 0:
-                for i in range(dias_passados + 1):
-                    d = data_inicio_residencia + timedelta(days=i)
-                    mp, mt = obter_metas_do_dia(d)
-                    meta_global_pratica += mp
-                    meta_global_teorica += mt
-            
-            meta_global_total = meta_global_pratica + meta_global_teorica
+            @st.cache_data(ttl=30, show_spinner=False)
+            def carregar_todos_pontos_adm(uids_tuple):
+                pontos = []
+                if not uids_tuple: return pontos
+                
+                # O Firebase só aceita pesquisar 30 itens de uma vez. Vamos fatiar a lista!
+                for i in range(0, len(uids_tuple), 30):
+                    lote_uids = uids_tuple[i:i+30]
+                    pontos_ref = db.collection("pontos").where("uid_residente", "in", lote_uids).get()
+                    for p in pontos_ref:
+                        dados = p.to_dict()
+                        dados["doc_id"] = p.id
+                        pontos.append(dados)
+                return pontos
 
             try:
-                todos_pontos_ref = db.collection("pontos").get()
-                todos_pontos_adm = [p.to_dict() for p in todos_pontos_ref]
+                # 🚀 O PULO DO GATO: Extrai os UIDs apenas de quem passou no Filtro do Raio-X!
+                uids_ativos_na_tela = tuple([r.get('uid') for r in lista_rx])
+                todos_pontos_adm = carregar_todos_pontos_adm(uids_ativos_na_tela)
             except Exception as e:
+                st.error(f"Erro na busca otimizada: {e}")
                 todos_pontos_adm = []
 
-            # PROCESSAMENTO DA TROPA
+            # PROCESSAMENTO DA TROPA (TOTALMENTE DELEGADO AO MOTOR CENTRAL)
             dados_tropa = []
             total_horas_realizadas = 0.0
             residentes_desatualizados = 0
             residentes_no_vermelho = 0
+            meta_global_total = 0.0
             
             for res in lista_rx:
                 uid = res.get('uid')
@@ -662,38 +687,26 @@ with aba1:
                 
                 pontos_res = [p for p in todos_pontos_adm if p.get('uid_residente') == uid]
                 
-                trab_p, trab_t, ferias_p, ferias_t, faltas_p, faltas_t = 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
-                ultima_data_str = "1900-01-01"
+                # 🚀 INVOCA O MOTOR DE INTELIGÊNCIA
+                motor_res = calcular_motor_horas(pontos_res, data_inicio_residencia, hoje, lista_meses, meses_num_para_pt)
                 
-                for pt in pontos_res:
-                    cat = pt.get('categoria', '')
-                    h = float(pt.get('horas_computadas', 0.0))
-                    d_str = pt.get('data_registro')
-                    
-                    if d_str > ultima_data_str: ultima_data_str = d_str
-                    
-                    d_obj = dt.datetime.strptime(d_str, "%Y-%m-%d").date()
-                    p_dia, t_dia = obter_metas_do_dia(d_obj)
-                    
-                    if cat == 'Prática': trab_p += h
-                    elif cat in ['Teórica', 'Teórico-prática']: trab_t += h
-                    elif cat == 'Férias': 
-                        ferias_p += p_dia
-                        ferias_t += t_dia
-                    elif cat == 'Falta': 
-                        faltas_p += p_dia
-                        faltas_t += t_dia
+                meta_global_total = motor_res["esperado"]["ate_hoje"] # É igual para todos
+                meta_p = motor_res["esperado"]["pratica"]
+                meta_t = motor_res["esperado"]["teorica"]
                 
-                realizado_pratica = trab_p + ferias_p
-                realizado_teorica = trab_t + ferias_t
-                total_trabalhado = realizado_pratica + realizado_teorica
-                total_horas_realizadas += total_trabalhado
+                feito_p = motor_res["cumprido"]["pratica"]
+                feito_t = motor_res["cumprido"]["teorica"]
+                total_trabalhado = motor_res["totais_gerais"]["trabalhado"]
+                saldo_final = motor_res["saldos"]["acumulado"]
                 
-                saldo_p = realizado_pratica - faltas_p - meta_global_pratica
-                saldo_t = realizado_teorica - faltas_t - meta_global_teorica
-                saldo_final = saldo_p + saldo_t
-                
+                total_horas_realizadas += (feito_p + feito_t)
                 if saldo_final < 0: residentes_no_vermelho += 1
+                
+                # Lógica para descobrir a última vez que o residente abriu o app
+                ultima_data_str = "1900-01-01"
+                for pt in pontos_res:
+                    d_str = pt.get('data_registro', '')
+                    if d_str > ultima_data_str: ultima_data_str = d_str
                 
                 if ultima_data_str != "1900-01-01":
                     ult_d = dt.datetime.strptime(ultima_data_str, "%Y-%m-%d").date()
@@ -711,14 +724,15 @@ with aba1:
                     "uid": uid,
                     "Nome": nome,
                     "Núcleo": prof,
-                    "Prática (F)": realizado_pratica,
-                    "Prática (M)": meta_global_pratica,
-                    "Teórica (F)": realizado_teorica,
-                    "Teórica (M)": meta_global_teorica,
+                    "Prática (F)": feito_p,
+                    "Prática (M)": meta_p,
+                    "Teórica (F)": feito_t,
+                    "Teórica (M)": meta_t,
                     "Saldo Final": saldo_final,
                     "Último Lançamento": status_app,
                     "_dias_off": dias_off,
-                    "_total_feito": total_trabalhado
+                    "_total_feito": total_trabalhado,
+                    "motor_completo": motor_res # Salvamos o pacote do motor para o PDF
                 })
 
             df_tropa = pd.DataFrame(dados_tropa)
@@ -841,8 +855,8 @@ with aba1:
                         with col_btn:
                             st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
                             
-                            # Gera o PDF dinamicamente na memória, pronto para ser baixado
-                            pdf_bytes = gerar_pdf_extrato(nome, nucleo, uid_row, todos_pontos_adm)
+                            # Gera o PDF usando os cálculos absolutos do Motor Central
+                            pdf_bytes = gerar_pdf_extrato(nome, nucleo, uid_row, todos_pontos_adm, row['motor_completo'])
                             
                             st.download_button(
                                 label="📄 Baixar PDF",
@@ -873,6 +887,7 @@ with aba2:
                 if novo_nucleo and novo_nucleo not in nucleos_atuais:
                     nucleos_atuais.append(novo_nucleo)
                     salvar_nucleos(nucleos_atuais)
+                    carregar_nucleos.clear()
                     st.rerun()
 
         st.markdown("##### Núcleos Cadastrados:")
@@ -884,6 +899,7 @@ with aba2:
                 if len(nucleos_atuais) > 1:
                     nucleos_atuais.remove(n)
                     salvar_nucleos(nucleos_atuais)
+                    carregar_nucleos.clear()
                     st.rerun()
                 else:
                     st.error("Você precisa de pelo menos um núcleo.")
@@ -995,6 +1011,7 @@ with aba2:
                                                         "ano_residencia": e_ano,
                                                         "status": e_status
                                                     })
+                                                    carregar_residentes_adm.clear()
                                                     auth.update_user(uid_res, display_name=e_nome.strip())
                                                     st.success("✅ Dados atualizados com sucesso!")
                                                     st.rerun()
@@ -1006,6 +1023,7 @@ with aba2:
                                             auth.update_user(uid_res, password="Mudar@123")
                                             db.collection("residentes").document(uid_res).update({"primeiro_login": True})
                                             st.success("✅ Senha resetada para 'Mudar@123'.")
+                                            carregar_residentes_adm.clear()
                                         except Exception as e:
                                             st.error(f"Erro ao resetar: {e}")
 
@@ -1051,6 +1069,7 @@ with aba2:
                                         try:
                                             db.collection("residentes").document(uid_res).update({"status": novo_status})
                                             st.success("✅ Status do residente atualizado com sucesso!")
+                                            carregar_residentes_adm.clear()
                                             st.rerun()
                                         except Exception as e:
                                             st.error(f"Erro ao atualizar: {e}")
@@ -1293,6 +1312,9 @@ with aba3:
                                             "justificativa": e_obs,
                                             "ultima_edicao": firestore.SERVER_TIMESTAMP
                                         })
+
+                                        carregar_todos_pontos_adm.clear()
+
                                         st.success("✅ Registro atualizado com sucesso!")
                                         st.rerun()
                                     except Exception as e:
@@ -1300,6 +1322,7 @@ with aba3:
                                 
                                 if st.button("🗑️ Forçar Exclusão", key=f"del_adm_{pt['doc_id']}", use_container_width=True):
                                     db.collection("pontos").document(pt['doc_id']).delete()
+                                    carregar_todos_pontos_adm.clear()
                                     st.success("✅ Ponto obliterado pelo Administrador!")
                                     st.rerun()
 
@@ -1341,6 +1364,7 @@ with aba3:
                         
                         try:
                             db.collection("pontos").document(doc_id_inj).set(dados_inj)
+                            carregar_todos_pontos_adm.clear()
                             st.success("✅ Registro injetado com sucesso!")
                             st.rerun()
                         except Exception as e:
@@ -1906,6 +1930,8 @@ with aba4:
                             
                             if contador_ops > 0:
                                 batch.commit()
+                            
+                            carregar_todos_pontos_adm.clear()
                                 
                             st.success("✔️ Transação executada com sucesso! O banco de dados foi atualizado de forma centralizada.")
                             

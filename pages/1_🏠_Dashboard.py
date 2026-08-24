@@ -116,12 +116,21 @@ lista_meses.reverse()
 # ==========================================
 # REQUISIÇÃO AO FIREBASE E MOTOR DE CÁLCULO
 # ==========================================
-pontos_ref = db.collection("pontos").where("uid_residente", "==", st.session_state.uid).stream()
-todos_pontos = []
-for p in pontos_ref:
-    d = p.to_dict()
-    d["doc_id"] = p.id # Salvando o ID para a lixeira funcionar!
-    todos_pontos.append(d)
+@st.cache_data(ttl=30, show_spinner=False)
+def carregar_pontos_residente(uid):
+    pontos_ref = db.collection("pontos").where(
+        "uid_residente", "==", uid
+    ).stream()
+
+    pontos = []
+    for p in pontos_ref:
+        d = p.to_dict()
+        d["doc_id"] = p.id
+        pontos.append(d)
+
+    return pontos
+
+todos_pontos = carregar_pontos_residente(st.session_state.uid)
 
 # MÁGICA AQUI: O motor externo faz todo o cálculo pesado e devolve os resultados
 resultados_calculo = calcular_motor_horas(todos_pontos, data_inicio, data_hoje, lista_meses, meses_num_para_pt)
