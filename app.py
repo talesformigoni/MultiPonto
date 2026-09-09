@@ -159,3 +159,13 @@ if btn_esqueci_senha:
             st.error("⚠️ Erro de conexão com os servidores do Google.")
     else:
         st.warning("💡 Digite o seu e-mail no campo acima primeiro, depois clique em 'Esqueci minha senha'.")
+
+# ==========================================
+# 4. RODAPÉ INSTITUCIONAL / CIENTÍFICO
+# ==========================================
+st.markdown("<div style='margin-top: 60px; border-top: 1px solid #e5e7eb; padding-top: 20px;'></div>", unsafe_allow_html=True)
+
+col_espaco1, col_btn_sobre, col_espaco2 = st.columns([1, 1.5, 1])
+with col_btn_sobre:
+    if st.button("🔬 Sobre o Projeto e Autoria", type="tertiary", use_container_width=True):
+        st.switch_page("pages/3_🔬_Sobre_o_Projeto.py")
