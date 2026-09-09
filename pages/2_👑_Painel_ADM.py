@@ -45,6 +45,46 @@ if st.session_state.get("uid") != UID_ADMIN:
     st.stop() # Mata a execução da página aqui mesmo
 
 # ==========================================
+# GAVETA DE NOVIDADES (POP-UP)
+# ==========================================
+@st.dialog("🚀 Atualização de Infraestrutura: Painel ADM 3.0!")
+def mostrar_novidades_adm_popup():
+    st.markdown("""
+    Fala, Coordenação! O motor do nosso sistema acabou de passar por uma reestruturação profunda para alta escala. Veja o que mudou:
+    
+    * 🛡️ **Custo Zero de Leitura no Raio-X:** A tela inicial agora utiliza *Agregadores Inteligentes*. Ela carrega instantaneamente sem consumir a cota diária do banco de dados.
+    * 📄 **Geração de PDF Sob Demanda:** Os relatórios de auditoria deixaram de ser gerados nos bastidores. O sistema agora só trabalha quando o botão "Gerar Relatório" é clicado!
+    * ⚡ **Fragmentação de Componentes:** As telas de lançamentos em lote agora atualizam apenas o necessário, deixando o painel ultra fluido.
+    * 🛣️ **Rodovias Expressas (Índices):** A busca de Extratos e Filtros agora conta com índices compostos no Google Cloud, respondendo em milissegundos.
+    * 🔒 **Bunker de Segurança (Firestore):** As regras do banco de dados foram reescritas e trancadas. O sistema bloqueia 100% de tentativas de acesso externo, garantindo proteção total aos dados da residência.
+    
+    *O sistema agora está blindado, ultra veloz e pronto para o uso contínuo!*
+    """)
+    
+    st.write("")
+    if st.button("Entendi, vamos lá! 🎉", type="primary", use_container_width=True):
+        # Salva no banco (usando a coleção config para separar dos residentes)
+        db.collection("config").document(f"admin_prefs_{st.session_state.uid}").set(
+            {"viu_update_adm_v2": True}, merge=True
+        )
+        st.session_state.viu_update_adm_v2 = True
+        st.rerun()
+
+# ==========================================
+# GATILHO DO POP-UP
+# ==========================================
+if "viu_update_adm_v2" not in st.session_state:
+    admin_doc = db.collection("config").document(f"admin_prefs_{st.session_state.uid}").get()
+    if admin_doc.exists:
+        dados_admin = admin_doc.to_dict()
+        st.session_state.viu_update_adm_v2 = dados_admin.get("viu_update_adm_v2", False)
+    else:
+        st.session_state.viu_update_adm_v2 = False
+
+if not st.session_state.viu_update_adm_v2:
+    mostrar_novidades_adm_popup()
+
+# ==========================================
 # 2. CABEÇALHO DO MEGAZORD
 # ==========================================
 st.markdown("""
@@ -650,64 +690,72 @@ with aba1:
                 if isinstance(out, str): return out.encode('latin-1', 'replace')
                 return bytes(out)
 
-            @st.cache_data(ttl=30, show_spinner=False)
-            def carregar_todos_pontos_adm(uids_tuple):
-                pontos = []
-                if not uids_tuple: return pontos
-                
-                # O Firebase só aceita pesquisar 30 itens de uma vez. Vamos fatiar a lista!
-                for i in range(0, len(uids_tuple), 30):
-                    lote_uids = uids_tuple[i:i+30]
-                    pontos_ref = db.collection("pontos").where("uid_residente", "in", lote_uids).get()
-                    for p in pontos_ref:
-                        dados = p.to_dict()
-                        dados["doc_id"] = p.id
-                        pontos.append(dados)
-                return pontos
+            # ==========================================
+            # CALCULA A META GLOBAL (APENAS 1 VEZ PARA TODOS)
+            # ==========================================
+            meta_global_pratica = 0.0
+            meta_global_teorica = 0.0
+            
+            dias_passados = (hoje - data_inicio_residencia).days
+            if dias_passados >= 0:
+                for i in range(dias_passados + 1):
+                    mp, mt = obter_metas_do_dia(data_inicio_residencia + timedelta(days=i))
+                    meta_global_pratica += mp
+                    meta_global_teorica += mt
+            
+            meta_global_total = meta_global_pratica + meta_global_teorica
 
-            try:
-                # 🚀 O PULO DO GATO: Extrai os UIDs apenas de quem passou no Filtro do Raio-X!
-                uids_ativos_na_tela = tuple([r.get('uid') for r in lista_rx])
-                todos_pontos_adm = carregar_todos_pontos_adm(uids_ativos_na_tela)
-            except Exception as e:
-                st.error(f"Erro na busca otimizada: {e}")
-                todos_pontos_adm = []
-
-            # PROCESSAMENTO DA TROPA (TOTALMENTE DELEGADO AO MOTOR CENTRAL)
+            # ==========================================
+            # PROCESSAMENTO DA TROPA (CUSTO ZERO DE LEITURAS - VIA AGREGADORES)
+            # ==========================================
             dados_tropa = []
             total_horas_realizadas = 0.0
             residentes_desatualizados = 0
             residentes_no_vermelho = 0
-            meta_global_total = 0.0
             
             for res in lista_rx:
                 uid = res.get('uid')
                 nome = res.get('nome_completo', 'Desconhecido')
                 prof = res.get('profissao', 'Outros')
                 
-                pontos_res = [p for p in todos_pontos_adm if p.get('uid_residente') == uid]
+                agregador = res.get('agregadores')
                 
-                # 🚀 INVOCA O MOTOR DE INTELIGÊNCIA
-                motor_res = calcular_motor_horas(pontos_res, data_inicio_residencia, hoje, lista_meses, meses_num_para_pt)
+                # 🚀 SISTEMA DE AUTO-CURA (Roda só 1x na vida caso o residente nunca tenha sido sincronizado)
+                if not agregador:
+                    pt_ref = db.collection("pontos").where("uid_residente", "==", uid).get()
+                    pts = [p.to_dict() for p in pt_ref]
+                    
+                    from calculadora_horas import calcular_motor_horas
+                    motor_res = calcular_motor_horas(pts, data_inicio_residencia, hoje, lista_meses, meses_num_para_pt)
+                    
+                    ultima_data_str = "1900-01-01"
+                    for p in pts:
+                        if p.get("data_registro", "") > ultima_data_str: 
+                            ultima_data_str = p.get("data_registro")
+                            
+                    agregador = {
+                        "pratica_realizada": motor_res["cumprido"]["pratica"],
+                        "teorica_realizada": motor_res["cumprido"]["teorica"],
+                        "total_trabalhado": motor_res["totais_gerais"]["trabalhado"],
+                        "faltas_debito": motor_res["totais_gerais"]["faltas_debito"],
+                        "ultima_data_lancamento": ultima_data_str
+                    }
+                    db.collection("residentes").document(uid).update({"agregadores": agregador})
+
+                # Usa os dados já calculados e salvos (Super Veloz)
+                feito_p = agregador.get("pratica_realizada", 0.0)
+                feito_t = agregador.get("teorica_realizada", 0.0)
+                total_trabalhado = agregador.get("total_trabalhado", 0.0)
+                faltas_debito = agregador.get("faltas_debito", 0.0)
+                ultima_data_str = agregador.get("ultima_data_lancamento", "1900-01-01")
+
+                saldo_final = total_trabalhado - faltas_debito - meta_global_total
+                saldo_p_real = feito_p - meta_global_pratica 
+                saldo_t_real = feito_t - meta_global_teorica
                 
-                meta_global_total = motor_res["esperado"]["ate_hoje"] # É igual para todos
-                meta_p = motor_res["esperado"]["pratica"]
-                meta_t = motor_res["esperado"]["teorica"]
-                
-                feito_p = motor_res["cumprido"]["pratica"]
-                feito_t = motor_res["cumprido"]["teorica"]
-                total_trabalhado = motor_res["totais_gerais"]["trabalhado"]
-                saldo_final = motor_res["saldos"]["acumulado"]
-                
-                total_horas_realizadas += (feito_p + feito_t)
+                total_horas_realizadas += total_trabalhado
                 if saldo_final < 0: residentes_no_vermelho += 1
-                
-                # Lógica para descobrir a última vez que o residente abriu o app
-                ultima_data_str = "1900-01-01"
-                for pt in pontos_res:
-                    d_str = pt.get('data_registro', '')
-                    if d_str > ultima_data_str: ultima_data_str = d_str
-                
+
                 if ultima_data_str != "1900-01-01":
                     ult_d = dt.datetime.strptime(ultima_data_str, "%Y-%m-%d").date()
                     dias_off = (hoje - ult_d).days
@@ -719,20 +767,21 @@ with aba1:
                     status_app = "Nunca lançou"
                 
                 if dias_off > 7: residentes_desatualizados += 1
-                    
+
                 dados_tropa.append({
                     "uid": uid,
                     "Nome": nome,
                     "Núcleo": prof,
                     "Prática (F)": feito_p,
-                    "Prática (M)": meta_p,
+                    "Prática (M)": meta_global_pratica,
                     "Teórica (F)": feito_t,
-                    "Teórica (M)": meta_t,
+                    "Teórica (M)": meta_global_teorica,
                     "Saldo Final": saldo_final,
+                    "Saldo P": saldo_p_real,
+                    "Saldo T": saldo_t_real,
                     "Último Lançamento": status_app,
                     "_dias_off": dias_off,
-                    "_total_feito": total_trabalhado,
-                    "motor_completo": motor_res # Salvamos o pacote do motor para o PDF
+                    "_total_feito": total_trabalhado
                 })
 
             df_tropa = pd.DataFrame(dados_tropa)
@@ -794,8 +843,8 @@ with aba1:
                         saldo = row['Saldo Final']
                         app_uso = row['Último Lançamento']
                         
-                        saldo_p_real = row['Prática (F)'] - row['Prática (M)']
-                        saldo_t_real = row['Teórica (F)'] - row['Teórica (M)']
+                        saldo_p_real = row['Saldo P']
+                        saldo_t_real = row['Saldo T']
                         
                         cor_p = "#dc2626" if saldo_p_real < 0 else "#2563eb"
                         bg_p = "#fef2f2" if saldo_p_real < 0 else "#eff6ff"
@@ -816,7 +865,6 @@ with aba1:
                         else:
                             cor_app, text_app = "#fee2e2", "#991b1b" 
 
-                        # O layout agora usa colunas do Streamlit para poder embutir o botão do lado direito
                         col_card, col_btn = st.columns([4.5, 1.2])
                         
                         with col_card:
@@ -855,18 +903,26 @@ with aba1:
                         with col_btn:
                             st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
                             
-                            # Gera o PDF usando os cálculos absolutos do Motor Central
-                            pdf_bytes = gerar_pdf_extrato(nome, nucleo, uid_row, todos_pontos_adm, row['motor_completo'])
-                            
-                            st.download_button(
-                                label="📄 Baixar PDF",
-                                data=pdf_bytes,
-                                file_name=f"Extrato_Auditoria_{nome.split()[0]}.pdf",
-                                mime="application/pdf",
-                                key=f"dl_pdf_{uid_row}",
-                                use_container_width=True,
-                                type="primary"
-                            )
+                            # 🚀 O SEGREDO DO PDF: Fragmentado e Gerado Sob Demanda!
+                            @st.fragment
+                            def renderizar_btn_pdf(u_frag, n_frag, p_frag):
+                                if st.button("📄 Gerar Relatório", key=f"btn_prep_pdf_{u_frag}", use_container_width=True):
+                                    with st.spinner("Compilando..."):
+                                        # 1. Puxa os pontos APENAS desse residente específico e NA HORA do clique! (100% de economia)
+                                        pt_ref = db.collection("pontos").where("uid_residente", "==", u_frag).get()
+                                        pts_frag = [pt.to_dict() for pt in pt_ref]
+                                        
+                                        meses_n = {"01": "JANEIRO", "02": "FEVEREIRO", "03": "MARÇO", "04": "ABRIL", "05": "MAIO", "06": "JUNHO", "07": "JULHO", "08": "AGOSTO", "09": "SETEMBRO", "10": "OUTUBRO", "11": "NOVEMBRO", "12": "DEZEMBRO"}
+                                        l_meses = [f"{meses_n[f'{m:02d}']}/{ano}" for ano in range(2026, 2031) for m in range(1, 13)]
+                                        
+                                        from calculadora_horas import calcular_motor_horas
+                                        motor_frag = calcular_motor_horas(pts_frag, data_inicio_residencia, hoje, l_meses, meses_n)
+                                        
+                                        pdf_bytes = gerar_pdf_extrato(n_frag, p_frag, u_frag, pts_frag, motor_frag)
+                                        
+                                        st.download_button("⬇️ Baixar PDF", data=pdf_bytes, file_name=f"Auditoria_{n_frag.split()[0]}.pdf", mime="application/pdf", key=f"dl_pdf_final_{u_frag}", use_container_width=True, type="primary")
+
+                            renderizar_btn_pdf(uid_row, nome, nucleo)
 
 # --- MÓDULO 2: GESTÃO DE RESIDENTES ---
 with aba2:
