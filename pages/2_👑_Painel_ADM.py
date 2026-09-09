@@ -62,26 +62,39 @@ def mostrar_novidades_adm_popup():
     """)
     
     st.write("")
-    if st.button("Entendi, vamos lá! 🎉", type="primary", use_container_width=True):
-        # Salva no banco (usando a coleção config para separar dos residentes)
+    
+    # Detalhe de UX: Mostra quantas visualizações restam no botão
+    views_restantes = 4 - st.session_state.contagem_update_v2
+    if views_restantes > 1:
+        texto_botao = f"Entendi, vamos lá! 🎉 (Aviso sumirá em {views_restantes} acessos)"
+    else:
+        texto_botao = "Entendi, vamos lá! 🎉 (Último aviso)"
+
+    if st.button(texto_botao, type="primary", use_container_width=True):
+        # Aumenta a contagem em +1
+        nova_contagem = st.session_state.contagem_update_v2 + 1
+        
+        # Salva o número no banco
         db.collection("config").document(f"admin_prefs_{st.session_state.uid}").set(
-            {"viu_update_adm_v2": True}, merge=True
+            {"contagem_update_v2": nova_contagem}, merge=True
         )
-        st.session_state.viu_update_adm_v2 = True
+        st.session_state.contagem_update_v2 = nova_contagem
         st.rerun()
 
 # ==========================================
-# GATILHO DO POP-UP
+# GATILHO DO POP-UP (Repete até 4 vezes)
 # ==========================================
-if "viu_update_adm_v2" not in st.session_state:
+if "contagem_update_v2" not in st.session_state:
     admin_doc = db.collection("config").document(f"admin_prefs_{st.session_state.uid}").get()
     if admin_doc.exists:
         dados_admin = admin_doc.to_dict()
-        st.session_state.viu_update_adm_v2 = dados_admin.get("viu_update_adm_v2", False)
+        # Lê o número do banco, se não existir, assume 0
+        st.session_state.contagem_update_v2 = dados_admin.get("contagem_update_v2", 0)
     else:
-        st.session_state.viu_update_adm_v2 = False
+        st.session_state.contagem_update_v2 = 0
 
-if not st.session_state.viu_update_adm_v2:
+# Se o adm viu menos de 4 vezes, dispara o pop-up
+if st.session_state.contagem_update_v2 < 4:
     mostrar_novidades_adm_popup()
 
 # ==========================================
