@@ -147,28 +147,30 @@ O projeto nasce, portanto, de uma premissa simples: <b>quando um problema recorr
 """, unsafe_allow_html=True)
 
 # ============================================================
-# 5. TECNOLOGIA
+# 5. TECNOLOGIA, DESENVOLVIMENTO E IA
 # ============================================================
 st.markdown("""
 <div class="info-card">
 <div class="section-header">
 <div class="section-icon">⚙️</div>
-<div class="section-title">Arquitetura e tecnologia</div>
+<div class="section-title">Arquitetura, Desenvolvimento e IA</div>
 </div>
 <div class="text-body">
-O sistema foi desenvolvido utilizando uma arquitetura baseada em serviços em nuvem, banco de dados NoSQL e ferramentas de análise de dados.
+O sistema foi desenvolvido utilizando uma arquitetura baseada em serviços em nuvem, banco de dados NoSQL e ferramentas de análise de dados. A estrutura foi pensada para permitir evolução progressiva da aplicação, mantendo separação entre interface, autenticação, armazenamento e processamento das informações.
 <br><br>
-A estrutura foi pensada para permitir evolução progressiva da aplicação, mantendo separação entre interface, autenticação, armazenamento e processamento das informações.
+Todo o ambiente de engenharia de software foi orquestrado localmente no <b>Visual Studio Code (VS Code)</b>, com o versionamento e hospedagem segura do código-fonte através do <b>GitHub</b>.
+<br><br>
+Um grande diferencial metodológico na concepção deste projeto foi a aplicação de Inteligência Artificial Generativa. A construção, otimização arquitetural e refatoração do código contaram com o apoio do <b>Google Gemini Pro</b> (modelo avançado de contexto estendido). A IA atuou como uma parceira de <i>pair programming</i> (programação em par), acelerando a tradução de lógicas complexas e legislações rigorosas da gestão pública para algoritmos de alta eficiência.
 </div>
 <div class="tech-container">
 <span class="tech-badge">Python 3</span>
 <span class="tech-badge">Streamlit</span>
-<span class="tech-badge">Firebase</span>
-<span class="tech-badge">Cloud Firestore</span>
-<span class="tech-badge">Firebase Authentication</span>
-<span class="tech-badge">Pandas</span>
-<span class="tech-badge">Plotly</span>
+<span class="tech-badge">Firebase & Firestore</span>
+<span class="tech-badge">Pandas & Plotly</span>
 <span class="tech-badge">FPDF</span>
+<span class="tech-badge">VS Code</span>
+<span class="tech-badge">GitHub</span>
+<span class="tech-badge">Google Gemini Pro (IA)</span>
 </div>
 </div>
 """, unsafe_allow_html=True)
