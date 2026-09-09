@@ -1382,7 +1382,6 @@ with aba3:
                                             "ultima_edicao": firestore.SERVER_TIMESTAMP
                                         })
 
-                                        carregar_todos_pontos_adm.clear()
 
                                         st.success("✅ Registro atualizado com sucesso!")
                                         st.rerun()
@@ -1391,7 +1390,6 @@ with aba3:
                                 
                                 if st.button("🗑️ Forçar Exclusão", key=f"del_adm_{pt['doc_id']}", use_container_width=True):
                                     db.collection("pontos").document(pt['doc_id']).delete()
-                                    carregar_todos_pontos_adm.clear()
                                     st.success("✅ Ponto obliterado pelo Administrador!")
                                     st.rerun()
 
@@ -1433,7 +1431,6 @@ with aba3:
                         
                         try:
                             db.collection("pontos").document(doc_id_inj).set(dados_inj)
-                            carregar_todos_pontos_adm.clear()
                             st.success("✅ Registro injetado com sucesso!")
                             st.rerun()
                         except Exception as e:
@@ -2000,7 +1997,6 @@ with aba4:
                             if contador_ops > 0:
                                 batch.commit()
                             
-                            carregar_todos_pontos_adm.clear()
                                 
                             st.success("✔️ Transação executada com sucesso! O banco de dados foi atualizado de forma centralizada.")
                             
