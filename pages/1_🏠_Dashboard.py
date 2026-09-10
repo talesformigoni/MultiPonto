@@ -6,7 +6,7 @@ from firebase_admin import firestore
 from firebase_config import db
 from utils import aplicar_css, checar_login, mostrar_cabecalho
 
-# === NOVO: IMPORTANDO O MOTOR DE CÁLCULO ===
+# === IMPORTANDO O MOTOR DE CÁLCULO ===
 from calculadora_horas import (
     calcular_motor_horas, 
     obter_metas_do_dia, 
@@ -14,6 +14,20 @@ from calculadora_horas import (
     META_HORAS_SEMANA, META_HORAS_MES, 
     HORAS_DEBITO_FALTA, DIAS_FERIAS_ANO
 )
+
+# ==========================================
+# CATEGORIAS OFICIAIS (PADRÃO DO SISTEMA)
+# ==========================================
+CATEGORIAS_OFICIAIS = [
+    "Prática",
+    "Teórica",
+    "Estudo Auto-dirigido (AAD)",
+    "Férias",
+    "Falta",
+    "Atestado / Licença Médica",
+    "Feriado / Ponto Facultativo",
+    "Ausência Justificada"
+]
 
 # ==========================================
 # 1. Configuração Inicial (SEMPRE A PRIMEIRA COISA)
@@ -83,11 +97,6 @@ def checar_sobreposicao(novos_horarios, registros_existentes, cat_atual):
 # LÓGICA DE DATAS E CRONOGRAMA
 # ==========================================
 data_inicio = date(2026, 3, 2)
-
-# ==========================================
-# LÓGICA DE DATAS E CRONOGRAMA
-# ==========================================
-data_inicio = date(2026, 3, 2)
 data_hoje = date.today()
 
 mostrar_cabecalho()
@@ -114,7 +123,7 @@ lista_meses.reverse()
 
 
 # ==========================================
-# REQUISIÇÃO AO FIREBASE E MOTOR DE CÁLCULO
+# REQUISIÇÃO AO FIREBASE COM NORMALIZADOR
 # ==========================================
 @st.cache_data(ttl=30, show_spinner=False)
 def carregar_pontos_residente(uid):
@@ -126,6 +135,21 @@ def carregar_pontos_residente(uid):
     for p in pontos_ref:
         d = p.to_dict()
         d["doc_id"] = p.id
+        
+        # O TRADUTOR OFICIAL (Converte legados na mesma hora)
+        c = d.get("categoria", "")
+        c_up = c.upper()
+        if c_up in ["ATESTADO", "LICENÇA", "ATESTADO / LICENÇA MÉDICA"]: c = "Atestado / Licença Médica"
+        elif c_up in ["FERIADO", "PONTO FACULTATIVO", "FERIADO / PONTO FACULTATIVO"]: c = "Feriado / Ponto Facultativo"
+        elif c_up == "FALTA": c = "Falta"
+        elif c_up == "FÉRIAS": c = "Férias"
+        elif c_up in ["AUSÊNCIA JUSTIFICADA", "AUSENCIA JUSTIFICADA"]: c = "Ausência Justificada"
+        elif c_up == "TEÓRICO-PRÁTICA": c = "Teórica" # Migra o legado para simplificar a visualização
+        elif c_up == "ESTUDO AUTO-DIRIGIDO (AAD)": c = "Estudo Auto-dirigido (AAD)"
+        elif c_up == "PRÁTICA": c = "Prática"
+        elif c_up == "TEÓRICA": c = "Teórica"
+        
+        d["categoria"] = c
         pontos.append(d)
 
     return pontos
@@ -186,10 +210,87 @@ st.markdown("<hr style='margin-top: 5px; margin-bottom: 25px; border-color: #f3f
 
 if st.session_state.menu_atual == "Visão Geral":
 
+    # ==============================================================
+    # WIDGET GAMIFICAÇÃO: MISSÃO DA SEMANA
+    # ==============================================================
+    segunda_atual = data_hoje - timedelta(days=data_hoje.weekday())
+    domingo_atual = segunda_atual + timedelta(days=6)
+
+    meta_p_semana = 0.0
+    meta_t_semana = 0.0
+    for i in range(7):
+        d_alvo = segunda_atual + timedelta(days=i)
+        p_dia, t_dia = obter_metas_do_dia(d_alvo)
+        meta_p_semana += p_dia
+        meta_t_semana += t_dia
+
+    feito_p_semana = 0.0
+    feito_t_semana = 0.0
+    for p in todos_pontos:
+        d_str = p.get("data_registro", "")
+        if d_str:
+            d_obj = datetime.strptime(d_str, "%Y-%m-%d").date()
+            if segunda_atual <= d_obj <= domingo_atual:
+                cat = p.get("categoria", "")
+                h = float(p.get("horas_computadas", 0.0))
+                
+                if cat == "Férias": # Férias abate a meta do dia inteiro
+                    p_d, t_d = obter_metas_do_dia(d_obj)
+                    feito_p_semana += p_d
+                    feito_t_semana += t_d
+                elif cat == "Prática": 
+                    feito_p_semana += h
+                elif cat in ["Teórica", "Estudo Auto-dirigido (AAD)"]: 
+                    feito_t_semana += h
+
+    falta_p = max(0.0, meta_p_semana - feito_p_semana)
+    falta_t = max(0.0, meta_t_semana - feito_t_semana)
+    
+    pct_p = min(100, int((feito_p_semana / meta_p_semana) * 100)) if meta_p_semana > 0 else 100
+    pct_t = min(100, int((feito_t_semana / meta_t_semana) * 100)) if meta_t_semana > 0 else 100
+
+    st.markdown(f"<h3 style='color: #374151; font-weight: 800; font-size: 1.2rem; margin-top: 5px; margin-bottom: 15px;'>🎯 Sua Missão da Semana ({segunda_atual.strftime('%d/%m')} a {domingo_atual.strftime('%d/%m')})</h3>", unsafe_allow_html=True)
+
+    if falta_p == 0 and falta_t == 0:
+        st.markdown("<div style='background-color: #dcfce7; border: 1px solid #22c55e; border-left: 5px solid #16a34a; padding: 15px; border-radius: 8px; margin-bottom: 30px; box-shadow: 0 2px 4px rgba(0,0,0,0.05);'><span style='font-size: 1.5rem;'>🏆</span> <span style='font-weight: 800; color: #166534; font-size: 1.1rem;'>Semana Impecável!</span><br><span style='color: #15803d; font-weight: 500;'>A Coordenação já validou todas as suas metas desta semana. Tudo o que você fizer agora vai direto para o seu Saldo Extra!</span></div>", unsafe_allow_html=True)
+    else:
+        msg_p = f"Faltam {formatar_horas_exatas(falta_p)}" if falta_p > 0 else "✅ Meta Prática Batida!"
+        cor_p_txt = "#d97706" if falta_p > 0 else "#16a34a"
+        
+        msg_t = f"Faltam {formatar_horas_exatas(falta_t)}" if falta_t > 0 else "✅ Meta Teórica Batida!"
+        cor_t_txt = "#d97706" if falta_t > 0 else "#16a34a"
+
+        st.markdown(f"""
+        <div style='background-color: #ffffff; border: 1px solid #e5e7eb; padding: 20px; border-radius: 12px; margin-bottom: 30px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);'>
+            <div style='display: flex; gap: 30px; flex-wrap: wrap;'>
+                <div style='flex: 1; min-width: 250px;'>
+                    <div style='display: flex; justify-content: space-between; margin-bottom: 8px;'>
+                        <span style='font-weight: 800; color: #1e40af;'>🩺 Prática ({formatar_horas_exatas(meta_p_semana)})</span>
+                        <span style='font-weight: 700; color: {cor_p_txt};'>{msg_p}</span>
+                    </div>
+                    <div style='background-color: #e5e7eb; border-radius: 10px; height: 12px; width: 100%; overflow: hidden;'>
+                        <div style='background-color: #3b82f6; width: {pct_p}%; height: 100%; border-radius: 10px; transition: width 0.5s ease-in-out;'></div>
+                    </div>
+                    <div style='text-align: right; font-size: 0.8rem; font-weight: 700; color: #6b7280; margin-top: 4px;'>{pct_p}% Concluído pelos lançamentos da COREMU</div>
+                </div>
+                <div style='flex: 1; min-width: 250px;'>
+                    <div style='display: flex; justify-content: space-between; margin-bottom: 8px;'>
+                        <span style='font-weight: 800; color: #d97706;'>📚 Teórica ({formatar_horas_exatas(meta_t_semana)})</span>
+                        <span style='font-weight: 700; color: {cor_t_txt};'>{msg_t}</span>
+                    </div>
+                    <div style='background-color: #e5e7eb; border-radius: 10px; height: 12px; width: 100%; overflow: hidden;'>
+                        <div style='background-color: #f59e0b; width: {pct_t}%; height: 100%; border-radius: 10px; transition: width 0.5s ease-in-out;'></div>
+                    </div>
+                    <div style='text-align: right; font-size: 0.8rem; font-weight: 700; color: #6b7280; margin-top: 4px;'>{pct_t}% Concluído</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
     st.markdown("<div class='card-title' style='margin-bottom: 10px;'>Filtro Inteligente de Período</div>", unsafe_allow_html=True)
 
     meses_opcoes = lista_meses_crono
-    
+
     # Barra de arrastar para selecionar o intervalo de meses
     mes_inicio, mes_fim = st.select_slider(
         "Arraste para escolher o intervalo de meses para análise:",
@@ -251,7 +352,7 @@ if st.session_state.menu_atual == "Visão Geral":
             p_dia, t_dia = obter_metas_do_dia(d_obj)
 
             if cat == "Prática": dyn_real_pratica += horas
-            elif cat in ["Teórica", "Teórico-prática"]: dyn_real_teorica += horas
+            elif cat in ["Teórica", "Estudo Auto-dirigido (AAD)"]: dyn_real_teorica += horas
             elif cat == "Férias":
                 dyn_ferias_prat += p_dia
                 dyn_ferias_teor += t_dia
@@ -271,9 +372,9 @@ if st.session_state.menu_atual == "Visão Geral":
     # ==============================================================
     # RENDERIZAÇÃO DA INTERFACE (CONSOLIDADO E SEPARADO)
     # ==============================================================
-    
+
     st.markdown(f"<div class='card-title' style='margin-top: 20px; margin-bottom: 10px;'>📊 Balanço Consolidado: Prática + Teoria ({mes_inicio} a {mes_fim})</div>", unsafe_allow_html=True)
-    
+
     c1, c2, c3 = st.columns(3)
     with c1: 
         st.markdown(f"<div data-testid='column'><div class='card-title'>Deveria ter cumprido (Meta)</div><div><span class='big-number'>{formatar_horas_exatas(dyn_exp_total)}</span></div></div>", unsafe_allow_html=True)
@@ -328,7 +429,7 @@ if st.session_state.menu_atual == "Visão Geral":
                 </div>
                 <div style='display:flex; justify-content: space-between; margin-bottom: 10px; border-bottom: 1px dashed #d1d5db; padding-bottom: 5px;'>
                     <span style='color:#6b7280; font-weight: 600;'>Cumprido (c/ Férias):</span>
-                    <span style='font-weight:700; color:#1e40af;'>{formatar_horas_exatas(dyn_cumprido_teorica)}</span>
+                    <span style='font-weight:700; color:#d97706; font-size: 1.1rem;'>{formatar_horas_exatas(dyn_cumprido_teorica)}</span>
                 </div>
                 <div style='display:flex; justify-content: space-between; align-items: center; background-color: {bg_teo}; padding: 10px; border-radius: 6px; border: 1px solid {cor_teorica}40;'>
                     <span style='color:{cor_teorica}; font-weight: 800; font-size: 0.9rem;'>{texto_teo} DE TEORIA:</span>
@@ -379,10 +480,10 @@ if st.session_state.menu_atual == "Visão Geral":
     while curr_d <= dt_fim_periodo:
         p_dia, t_dia = obter_metas_do_dia(curr_d)
         meta_dia = p_dia + t_dia
-        
+
         d_str = curr_d.isoformat()
         regs_dia = pontos_por_dia.get(d_str, [])
-        
+
         trabalhado_pratica = 0.0
         trabalhado_teorica = 0.0
         ferias_pratica = 0.0
@@ -390,47 +491,47 @@ if st.session_state.menu_atual == "Visão Geral":
         cats_dia = []
         justificativas = []
         horarios_dia = []
-        
+
         for r in regs_dia:
             cat = r.get("categoria", "")
             horas = float(r.get("horas_computadas", 0.0))
             if cat and cat not in cats_dia: cats_dia.append(cat)
-            
+
             if r.get("justificativa"): 
                 justificativas.append(str(r.get("justificativa")).replace('\n', ' '))
-                
+
             if r.get("horarios_descritos"):
                 horarios_dia.extend(r.get("horarios_descritos"))
-            
+
             # Subdividindo as horas descritivamente
             if cat == "Prática":
                 trabalhado_pratica += horas
-            elif cat in ["Teórica", "Teórico-prática"]:
+            elif cat in ["Teórica", "Estudo Auto-dirigido (AAD)"]:
                 trabalhado_teorica += horas
             elif cat == "Férias":
                 ferias_pratica = p_dia
                 ferias_teorica = t_dia
-                
+
         # Atualizando os saldos da Máquina do Tempo
         trabalhado_dia = trabalhado_pratica + trabalhado_teorica
         realizado_dia = trabalhado_dia + ferias_pratica + ferias_teorica
-        
+
         saldo_dia = realizado_dia - meta_dia
         saldo_pratica_dia = (trabalhado_pratica + ferias_pratica) - p_dia
         saldo_teorica_dia = (trabalhado_teorica + ferias_teorica) - t_dia
-        
+
         saldo_corrente_timeline += saldo_dia
         saldo_acumulado_pratica += saldo_pratica_dia
         saldo_acumulado_teorica += saldo_teorica_dia
-        
-# Agora nós gravamos QUALQUER DIA que o residente tenha batido ponto OU que tenha gerado débito
+
+        # Agora nós gravamos QUALQUER DIA que o residente tenha batido ponto OU que tenha gerado débito
         if dt_ini_periodo <= curr_d <= dt_fim_periodo:
             if len(regs_dia) > 0 or abs(saldo_dia) > 0.05:
-                
-                # Inteligência do Título com foco na PRÁTICA
-                if "ATESTADO" in [c.upper() for c in cats_dia] or "Atestado" in cats_dia:
-                    titulo = "🩺 Atestado Médico / Saúde"
-                elif "Ausência justificada" in cats_dia or "Falta" in cats_dia:
+
+                # Inteligência do Título com foco na PRÁTICA e Categoria Normalizada
+                if "Atestado / Licença Médica" in cats_dia:
+                    titulo = "🩺 Atestado / Licença Médica"
+                elif "Ausência Justificada" in cats_dia or "Falta" in cats_dia:
                     titulo = "⚠️ Ausência / Débito Gerado"
                 elif saldo_pratica_dia > 0 and p_dia == 0:
                     titulo = "🚀 Plantão Extra (Prática)"
@@ -445,12 +546,12 @@ if st.session_state.menu_atual == "Visão Geral":
                         titulo = "✨ Horas Extras de Teoria"
                     else:
                         titulo = "✅ Dia Completo (Meta Atingida)"
-                    
+
                 detalhe_just = " | ".join(justificativas) if justificativas else ", ".join(cats_dia)
                 if not detalhe_just: detalhe_just = "Ponto normal"
-                
+
                 desc_horarios = " | ".join(horarios_dia) if horarios_dia else "Sem registros de relógio"
-                
+
                 extrato.append({
                     "data": curr_d,
                     "titulo": titulo,
@@ -461,13 +562,13 @@ if st.session_state.menu_atual == "Visão Geral":
                     "meta_pratica": p_dia,
                     "meta_teorica": t_dia,
                     "saldo_dia": saldo_dia,
-                    "saldo_pratica_dia": saldo_pratica_dia, # <--- Nova variável salva!
+                    "saldo_pratica_dia": saldo_pratica_dia, 
                     "saldo_teorica_dia": saldo_teorica_dia, 
                     "saldo_acumulado": saldo_corrente_timeline,
                     "saldo_acumulado_pratica": saldo_acumulado_pratica,
                     "saldo_acumulado_teorica": saldo_acumulado_teorica
                 })
-                
+
         curr_d += timedelta(days=1)
 
     # 3. Renderiza a Interface
@@ -475,16 +576,16 @@ if st.session_state.menu_atual == "Visão Geral":
 
     if extrato:
         st.markdown("<div style='background-color: #fcfcfc; border: 1px solid #e5e7eb; border-radius: 10px; padding: 20px; max-height: 500px; overflow-y: auto;'>", unsafe_allow_html=True)
-        
+
         for mov in extrato:
             # A cor e o sinal do número gigante agora respeitam APENAS a Prática
             cor_valor = "#16a34a" if mov["saldo_pratica_dia"] > 0 else ("#dc2626" if mov["saldo_pratica_dia"] < -0.05 else "#6b7280")
             sinal_valor = "+" if mov["saldo_pratica_dia"] > 0 else ""
-            
+
             cor_acum = "#16a34a" if mov["saldo_acumulado"] >= 0 else "#dc2626"
             cor_acum_prat = "#16a34a" if mov["saldo_acumulado_pratica"] >= 0 else "#dc2626"
             cor_acum_teor = "#16a34a" if mov["saldo_acumulado_teorica"] >= 0 else "#dc2626"
-            
+
             st.markdown(f"""
             <div style='display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #f3f4f6; padding: 16px 0;'>
                 <div style='flex: 1; padding-right: 15px;'>
@@ -508,7 +609,7 @@ if st.session_state.menu_atual == "Visão Geral":
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
+
         st.markdown("</div>", unsafe_allow_html=True)
     else:
         st.success("🎉 Você não possui registros neste período.")
@@ -520,54 +621,46 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
         with col_seletor: 
             mes_foco = st.selectbox("📅 Selecione o Mês", lista_meses)
         with col_filtro:
-            opcoes_filtro = ["Todas as Categorias", "Prática", "Teórica", "Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "Ponto Facultativo"]
+            opcoes_filtro = ["Todas as Categorias"] + CATEGORIAS_OFICIAIS
             cat_filtro = st.selectbox("🏷️ Filtrar Registros Específicos", opcoes_filtro)
         st.markdown("---")
 
         # --- NOVA MÁGICA: CÁLCULO EXATO DO MÊS (Dia a Dia, Minuto a Minuto) ---
         import calendar
         from datetime import date, timedelta
-        
+
         pt_para_num = {v: k for k, v in meses_num_para_pt.items()}
         nome_mes, ano_str = mes_foco.split('/')
         mes_num = int(pt_para_num[nome_mes])
         ano_num = int(ano_str)
-        
+
         _, dias_no_mes = calendar.monthrange(ano_num, mes_num)
         dt_inicio_mes = date(ano_num, mes_num, 1)
         dt_fim_mes = date(ano_num, mes_num, dias_no_mes)
-        
+
         # Ajuste para o mês de início da residência
         if ano_num == data_inicio.year and mes_num == data_inicio.month:
             dt_inicio_mes = data_inicio
-            
-        # Ajuste para o mês de início da residência
-        if ano_num == data_inicio.year and mes_num == data_inicio.month:
-            dt_inicio_mes = data_inicio
-            
+
         # O sistema só cobra a meta até ONTEM (se for o mês atual)
-        # Isso evita que o dia de hoje (ainda não trabalhado) vire dívida automática
         if ano_num == data_hoje.year and mes_num == data_hoje.month:
             dt_fim_mes = data_hoje - timedelta(days=1)
         elif date(ano_num, mes_num, 1) > data_hoje:
             dt_fim_mes = dt_inicio_mes - timedelta(days=1)
-            
+
         meta_pratica_mes = 0.0
         meta_teorica_mes = 0.0
-        
+
         curr_d = dt_inicio_mes
         while curr_d <= dt_fim_mes:
-            # Retiramos o if. A função agora tem o "cérebro" do cronograma oficial!
             p_dia, t_dia = obter_metas_do_dia(curr_d)
             meta_pratica_mes += p_dia
             meta_teorica_mes += t_dia
-            
             curr_d += timedelta(days=1)
-            
-        meta_mes_dinamica = meta_pratica_mes + meta_teorica_mes
 
+        meta_mes_dinamica = meta_pratica_mes + meta_teorica_mes
         dados_foco = dados_mensais[mes_foco]
-        
+
         # Saldos reais globais do mês EXATOS baseados no calendário lido acima
         saldo_mes = (dados_foco["trabalhadas"] + dados_foco["ferias"]) - meta_mes_dinamica
         saldo_pratica_mes = (dados_foco["pratica"] + (dados_foco["ferias"] * PERC_PRATICA)) - meta_pratica_mes
@@ -583,7 +676,7 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
         m4.markdown(f"<div data-testid='column'><div class='card-title'>Saldo do Mês</div><div style='font-size: 1.8rem; font-weight: 700; color: {cor_saldo_mes};'>{sinal_mes}{formatar_horas_exatas(saldo_mes)}</div></div>", unsafe_allow_html=True)
 
         st.write("")
-        
+
         # =========================================================
         # NOVO VISUAL DETALHADO PARA PRÁTICA E TEÓRICA
         # =========================================================
@@ -592,7 +685,7 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
             cor_p = "#16a34a" if saldo_pratica_mes >= 0 else "#dc2626"
             sinal_p = "+" if saldo_pratica_mes > 0 else "-"
             texto_saldo_p = "Horas em Crédito" if saldo_pratica_mes >= 0 else "Horas em Débito"
-            
+
             st.markdown(f"""
             <div data-testid='column' style='background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb; border-left: 4px solid #1e40af;'>
                 <div class='card-title' style='margin-bottom: 12px; color: #111827;'>🩺 Prática (Meta: {formatar_horas_exatas(meta_pratica_mes)})</div>
@@ -611,7 +704,7 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
             cor_t = "#16a34a" if saldo_teorica_mes >= 0 else "#dc2626"
             sinal_t = "+" if saldo_teorica_mes > 0 else "-"
             texto_saldo_t = "Horas em Crédito" if saldo_teorica_mes >= 0 else "Horas em Débito"
-            
+
             st.markdown(f"""
             <div data-testid='column' style='background-color: #f8fafc; padding: 15px; border-radius: 8px; border: 1px solid #e5e7eb; border-left: 4px solid #d97706;'>
                 <div class='card-title' style='margin-bottom: 12px; color: #111827;'>📚 Teórica (Meta: {formatar_horas_exatas(meta_teorica_mes)})</div>
@@ -633,7 +726,7 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
             dias_semana_soma = {0: 0.0, 1: 0.0, 2: 0.0, 3: 0.0, 4: 0.0, 5: 0.0, 6: 0.0}
             for p in todos_pontos:
                 d_str = p.get("data_registro", "")
-                if d_str and p.get("categoria") in ["Prática", "Teórica", "Teórico-prática"]:
+                if d_str and p.get("categoria") in ["Prática", "Teórica", "Estudo Auto-dirigido (AAD)"]:
                     ano_pt = d_str[0:4]
                     mes_pt_num = d_str[5:7]
                     if f"{meses_num_para_pt.get(mes_pt_num, '')}/{ano_pt}" == mes_foco:
@@ -656,10 +749,10 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
 
         # --- TABELA DE DETALHAMENTO, LEGENDA E EXPORTAÇÃO ---
         st.markdown("<hr style='margin-top: 30px;'>", unsafe_allow_html=True)
-        
+
         titulo_tabela = f"🗂️ Lista de Registros ({cat_filtro})" if cat_filtro != "Todas as Categorias" else "🗂️ Lista Completa de Registros do Mês"
         st.markdown(f"<div class='card-title'>{titulo_tabela}</div>", unsafe_allow_html=True)
-        
+
         pontos_mes_export = []
         for p in todos_pontos:
             d_str = p.get("data_registro", "")
@@ -667,9 +760,9 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
                 if f"{meses_num_para_pt.get(d_str[5:7], '')}/{d_str[0:4]}" == mes_foco:
                     if cat_filtro == "Todas as Categorias" or p.get("categoria", "") == cat_filtro:
                         pontos_mes_export.append(p)
-                        
+
         pontos_mes_export = sorted(pontos_mes_export, key=lambda k: k.get("data_registro", ""))
-        
+
         # 1. Renderiza a Tabela
         if pontos_mes_export:
             tabela_visual = []
@@ -682,19 +775,19 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
                     "Observações / Justificativa": p.get("justificativa", "")
                 })
             st.dataframe(tabela_visual, width='stretch')
-            
+
             # 2. Motor da LEGENDA DINÂMICA INTELIGENTE
             soma_horas_filtro = sum(float(p.get("horas_computadas", 0.0)) for p in pontos_mes_export)
-            
-            categorias_ausencia = ["Ausência justificada", "Falta", "Licença", "Atestado", "ATESTADO", "Ponto Facultativo"]
+
+            categorias_ausencia = ["Ausência Justificada", "Falta", "Atestado / Licença Médica", "Feriado / Ponto Facultativo"]
             dias_ausencia_filtro = sum(1 for p in pontos_mes_export if p.get("categoria", "") in categorias_ausencia)
-            
+
             # O Saldo exibido na legenda foca agora estritamente na PRÁTICA (salvo se filtrado por teoria)
-            if cat_filtro in ["Teórica", "Teórico-prática"]:
+            if cat_filtro in ["Teórica", "Estudo Auto-dirigido (AAD)"]:
                 saldo_real_exibir = saldo_teorica_mes
             else:
                 saldo_real_exibir = saldo_pratica_mes
-                
+
             # Inteligência visual: muda a cor e o título baseado no saldo
             if saldo_real_exibir < 0:
                 titulo_saldo = "DÍVIDA REAL DO MÊS"
@@ -704,7 +797,7 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
                 titulo_saldo = "SALDO EXTRA DO MÊS"
                 cor_saldo = "#16a34a" # Verde
                 texto_saldo = f"+{formatar_horas_exatas(saldo_real_exibir)}"
-                
+
             st.markdown(f"""
             <div style='display: flex; gap: 20px; padding: 15px; background-color: #f8fafc; border: 1px solid #e5e7eb; border-left: 5px solid #1e40af; border-radius: 8px; margin-top: -10px; margin-bottom: 25px;'>
                 <div style='flex: 1;'>
@@ -721,10 +814,10 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
+
         else:
             st.info("Nenhum registro encontrado com este filtro para o mês selecionado.")
-        
+
         # 3. Preparando os dados para Exportação em CSV
         csv_data = "Data,Categoria,Horarios,Horas Computadas,Justificativa\n"
         for p in pontos_mes_export:
@@ -734,9 +827,9 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
             horas = p.get("horas_computadas", 0)
             obs = str(p.get("justificativa", "")).replace('\n', ' ').replace(',', '')
             csv_data += f"{data_pt},{cat},{horarios},{horas},{obs}\n"
-            
+
         texto_botao = f"📊 Baixar Planilha Oficial ({cat_filtro})" if cat_filtro != "Todas as Categorias" else f"📊 Baixar Planilha Oficial ({mes_foco})"
-        
+
         st.download_button(
             label=texto_botao,
             data=csv_data.encode('utf-8-sig'),
@@ -749,10 +842,10 @@ elif st.session_state.menu_atual == "Mensal e Semanal":
 elif st.session_state.menu_atual == "Por Categoria":
     col_cat_sel, _ = st.columns([1, 2])
     with col_cat_sel: 
-        # Trocamos para MULTISELECT. Agora você pode selecionar quantas quiser!
+        # MULTISELECT com as Novas Categorias Oficiais
         categorias_selecionadas = st.multiselect(
             "Filtrar por Categoria(s)", 
-            ["Prática", "Teórica", "Teórico-prática", "Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "Ponto facultativo"],
+            CATEGORIAS_OFICIAIS,
             default=["Prática"]
         )
     st.markdown("---")
@@ -763,11 +856,11 @@ elif st.session_state.menu_atual == "Por Categoria":
     else:
         # Paleta de cores dinâmica (baseada no que está dentro da seleção)
         cor_cat = "#16a34a" # Verde padrão (Prática)
-        if any(c in ["Falta", "Ponto facultativo"] for c in categorias_selecionadas): 
+        if any(c == "Falta" for c in categorias_selecionadas): 
             cor_cat = "#dc2626" # Vermelho
-        elif any(c in ["Ausência justificada", "Férias", "Feriado", "Licença", "Atestado", "ATESTADO"] for c in categorias_selecionadas): 
+        elif any(c in ["Ausência Justificada", "Férias", "Feriado / Ponto Facultativo", "Atestado / Licença Médica"] for c in categorias_selecionadas): 
             cor_cat = "#d97706" # Laranja
-        elif any(c in ["Teórica", "Teórico-prática"] for c in categorias_selecionadas): 
+        elif any(c in ["Teórica", "Estudo Auto-dirigido (AAD)"] for c in categorias_selecionadas): 
             cor_cat = "#1e40af" # Azul
 
         # Nome dinâmico pro Card Principal
@@ -775,60 +868,60 @@ elif st.session_state.menu_atual == "Por Categoria":
 
         soma_historica_ocorrencias = 0
         soma_debito_ausencias = 0.0 
-        soma_horas_trabalho = 0.0 # NOVA VARIÁVEL: Para somar Prática/Teórica no mix
+        soma_horas_trabalho = 0.0 
         soma_debito_p = 0.0 
         soma_debito_t = 0.0 
         evolucao_cat_y = []
-        
+
         registros_detalhados = []
 
         # Varredura inteligente: analisa múltiplas categorias ao mesmo tempo
         for m in lista_meses_crono:
             ocorrencias_mes = 0
             valor_grafico_mes = 0.0 # Soma tudo que vai pro gráfico neste mês
-            
+
             for p in todos_pontos:
                 cat_registro = p.get("categoria", "")
-                
+
                 # A mágica: só processa se a categoria do ponto estiver na seleção
                 if cat_registro in categorias_selecionadas:
                     data_str = p.get("data_registro", "")
                     if f"{meses_num_para_pt.get(data_str[5:7], '')}/{data_str[0:4]}" == m:
                         ocorrencias_mes += 1
-                        
+
                         horas_lancadas = float(p.get("horas_computadas", 0.0))
                         dt_obj = datetime.strptime(data_str, "%Y-%m-%d").date()
                         p_dia, t_dia = obter_metas_do_dia(dt_obj)
-                        
-                        is_ausencia = cat_registro in ["Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "ATESTADO", "Ponto facultativo"]
-                        
+
+                        is_ausencia = cat_registro in ["Ausência Justificada", "Falta", "Férias", "Feriado / Ponto Facultativo", "Atestado / Licença Médica"]
+
                         if is_ausencia:
                             # Calcula quanto o residente trabalhou NESTE MESMO DIA
                             horas_trab_p = sum(float(p2.get("horas_computadas", 0.0)) for p2 in todos_pontos if p2.get("data_registro") == data_str and p2.get("categoria") == "Prática")
-                            horas_trab_t = sum(float(p2.get("horas_computadas", 0.0)) for p2 in todos_pontos if p2.get("data_registro") == data_str and p2.get("categoria") in ["Teórica", "Teórico-prática"])
-                            
+                            horas_trab_t = sum(float(p2.get("horas_computadas", 0.0)) for p2 in todos_pontos if p2.get("data_registro") == data_str and p2.get("categoria") in ["Teórica", "Estudo Auto-dirigido (AAD)"])
+
                             # O débito real de cada eixo
                             debito_p = p_dia - horas_trab_p
                             if debito_p < 0: debito_p = 0.0 
-                            
+
                             debito_t = t_dia - horas_trab_t
                             if debito_t < 0: debito_t = 0.0 
-                            
+
                             debito_real = debito_p + debito_t
                             soma_debito_ausencias += debito_real
                             valor_grafico_mes += debito_real
-                            
+
                             soma_debito_p += debito_p
                             soma_debito_t += debito_t
-                            
+
                             peso_visual = f"-{formatar_horas_exatas(debito_real)}" if debito_real > 0 else "0h"
                             badge_p = f"-{formatar_horas_exatas(debito_p)}"
                             badge_t = f"-{formatar_horas_exatas(debito_t)}"
                         else:
-                            # Se for Prática/Teórica
+                            # Se for Prática/Teórica/AAD
                             soma_horas_trabalho += horas_lancadas
                             valor_grafico_mes += horas_lancadas
-                            
+
                             peso_visual = f"+{formatar_horas_exatas(horas_lancadas)}" if horas_lancadas > 0 else "0h"
                             if cat_registro == "Prática":
                                 badge_p = f"+{formatar_horas_exatas(horas_lancadas)}"
@@ -836,13 +929,13 @@ elif st.session_state.menu_atual == "Por Categoria":
                             else:
                                 badge_p = "0h"
                                 badge_t = f"+{formatar_horas_exatas(horas_lancadas)}"
-                            
+
                         obs = p.get("justificativa", "")
                         if not obs: obs = "Sem observações detalhadas"
-                        
+
                         h_desc = " | ".join(p.get("horarios_descritos", []))
                         if not h_desc: h_desc = "Dia Integral / Sem relógio"
-                        
+
                         registros_detalhados.append({
                             "data_obj": dt_obj,
                             "horarios": h_desc,
@@ -853,22 +946,22 @@ elif st.session_state.menu_atual == "Por Categoria":
                             "is_ausencia": is_ausencia,
                             "nome_categoria": cat_registro # Salva a categoria para mostrar na etiqueta
                         })
-            
+
             soma_historica_ocorrencias += ocorrencias_mes
             evolucao_cat_y.append(valor_grafico_mes)
 
         c1, c2 = st.columns([1, 2])
-        
+
         # Análise do que o usuário misturou na seleção para exibir o texto perfeito
-        tem_trabalho = any(c in ["Prática", "Teórica", "Teórico-prática"] for c in categorias_selecionadas)
-        tem_ausencia = any(c in ["Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "Ponto facultativo"] for c in categorias_selecionadas)
+        tem_trabalho = any(c in ["Prática", "Teórica", "Estudo Auto-dirigido (AAD)"] for c in categorias_selecionadas)
+        tem_ausencia = any(c in ["Ausência Justificada", "Falta", "Férias", "Feriado / Ponto Facultativo", "Atestado / Licença Médica"] for c in categorias_selecionadas)
 
         with c1:
-            # Mantendo toda a sua lógica de texto intacta, e adicionando o caso misto
+            # Lógica de texto intacta + caso misto
             if tem_trabalho and tem_ausencia:
                 texto_principal = f"{soma_historica_ocorrencias} registros"
                 texto_secundario = f"Mistura de tipos de dados.<br><span style='color: #16a34a; font-weight: 600;'>Trabalhadas: +{formatar_horas_exatas(soma_horas_trabalho)}</span> | <span style='color: #dc2626; font-weight: 600;'>Ausências: -{formatar_horas_exatas(soma_debito_ausencias)}</span>"
-            
+
             elif tem_ausencia:
                 if "Férias" in categorias_selecionadas and len(categorias_selecionadas) == 1:
                     texto_principal = formatar_horas_exatas(soma_debito_ausencias)
@@ -876,7 +969,7 @@ elif st.session_state.menu_atual == "Por Categoria":
                 else:
                     texto_principal = f"-{formatar_horas_exatas(soma_debito_ausencias)}" if soma_debito_ausencias > 0 else "0h"
                     texto_secundario = f"Corresponde a {soma_historica_ocorrencias} registro(s).<br><span style='color: #1e40af; font-weight: 600;'>Prática: -{formatar_horas_exatas(soma_debito_p)}</span> | <span style='color: #d97706; font-weight: 600;'>Teórica: -{formatar_horas_exatas(soma_debito_t)}</span>"
-            
+
             else:
                 texto_principal = formatar_horas_exatas(soma_horas_trabalho)
                 texto_secundario = f"Distribuídos em {soma_historica_ocorrencias} registro(s)."
@@ -888,7 +981,7 @@ elif st.session_state.menu_atual == "Por Categoria":
                     <div style='color: #6b7280; font-size: 0.9rem; margin-top: 10px; line-height: 1.4;'>{texto_secundario}</div>
                 </div>
             """, unsafe_allow_html=True)
-            
+
         with c2:
             st.markdown(f"<div class='card-title'>Evolução Mensal (Horas)</div>", unsafe_allow_html=True)
             if sum(evolucao_cat_y) == 0:
@@ -896,7 +989,7 @@ elif st.session_state.menu_atual == "Por Categoria":
             else:
                 eixo_x_meses_abrev = [m.split('/')[0][:3] for m in lista_meses_crono]
                 textos_barras = [formatar_horas_exatas(v) for v in evolucao_cat_y]
-                
+
                 fig_cat = go.Figure(go.Bar(
                     x=eixo_x_meses_abrev, 
                     y=evolucao_cat_y, 
@@ -906,7 +999,7 @@ elif st.session_state.menu_atual == "Por Categoria":
                     textposition='outside',
                     textfont=dict(color="#374151", size=11)
                 ))
-                
+
                 fig_cat.update_layout(
                     height=220, 
                     margin=dict(l=0, r=0, t=20, b=0), 
@@ -915,7 +1008,7 @@ elif st.session_state.menu_atual == "Por Categoria":
                     xaxis=dict(color="#374151"), 
                     yaxis=dict(color="#374151", showgrid=True, gridcolor="#e5e7eb", zeroline=False)
                 )
-                
+
                 st.plotly_chart(fig_cat, width='stretch', config={'displayModeBar': False})
 
         # =========================================================
@@ -929,10 +1022,10 @@ elif st.session_state.menu_atual == "Por Categoria":
 
             for reg in registros_detalhados:
                 data_formatada = reg["data_obj"].strftime("%d/%m/%Y")
-                
+
                 bg_badge = "#fef2f2" if reg['is_ausencia'] else "#f0fdf4"
                 text_badge = "#dc2626" if reg['is_ausencia'] else "#16a34a"
-                
+
                 st.markdown(f"""
                 <div style='display: flex; justify-content: space-between; align-items: center; padding: 12px 15px; border: 1px solid #e5e7eb; border-left: 4px solid {cor_cat}; border-radius: 6px; margin-bottom: 10px; background-color: #f8fafc;'>
                     <div>
