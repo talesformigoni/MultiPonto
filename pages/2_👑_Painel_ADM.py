@@ -7,7 +7,21 @@ from utils import aplicar_css, checar_login
 from calculadora_horas import obter_metas_do_dia, calcular_motor_horas
 
 # ==========================================
-# FUNÇÕES GLOBAIS DE BANCO DE DADOS
+# CATEGORIAS OFICIAIS (PADRÃO DO SISTEMA)
+# ==========================================
+CATEGORIAS_OFICIAIS = [
+    "Prática",
+    "Teórica",
+    "Estudo Auto-dirigido (AAD)",
+    "Férias",
+    "Falta",
+    "Atestado / Licença Médica",
+    "Feriado / Ponto Facultativo",
+    "Ausência Justificada"
+]
+
+# ==========================================
+# FUNÇÕES GLOBAIS DE BANCO DE DADOS E TAGS
 # ==========================================
 @st.cache_data(ttl=300, show_spinner=False)
 def carregar_nucleos():
@@ -26,7 +40,29 @@ def carregar_nucleos():
     ]
 
 def salvar_nucleos(lista_nucleos):
-    db.collection("config").document("settings").set({"nucleos": lista_nucleos})
+    db.collection("config").document("settings").set({"nucleos": lista_nucleos}, merge=True)
+
+@st.cache_data(ttl=300, show_spinner=False)
+def carregar_tags():
+    doc = db.collection("config").document("settings").get()
+    if doc.exists:
+        return doc.to_dict().get(
+            "tags",
+            ["Rotina Padrão", "Compensação de Horas", "Ação Extramuro", "Educação em Saúde", "Mutirão"]
+        )
+    return ["Rotina Padrão", "Compensação de Horas", "Ação Extramuro", "Educação em Saúde", "Mutirão"]
+
+def salvar_tags(lista_tags):
+    db.collection("config").document("settings").set({"tags": lista_tags}, merge=True)
+
+def invalidar_agregador(uid_residente):
+    """Apaga o resumo do residente para forçar o Raio-X a recalcular as horas no próximo acesso."""
+    try:
+        db.collection("residentes").document(uid_residente).update({
+            "agregadores": firestore.DELETE_FIELD
+        })
+    except:
+        pass
 
 # ==========================================
 # 1. SEGURANÇA MÁXIMA (O LEÃO DE CHÁCARA)
@@ -41,148 +77,119 @@ UID_ADMIN = "CTEiPcg5JzLTDEL98eOWRiC5mJu1"
 if st.session_state.get("uid") != UID_ADMIN:
     st.markdown("<br><br><br>", unsafe_allow_html=True)
     st.error("⛔ **ACESSO NEGADO:** Esta área é de uso exclusivo da Coordenação da Residência.")
-    st.image("https://http.cat/403", width=400) # Um toque de humor para quem tentar invadir
-    st.stop() # Mata a execução da página aqui mesmo
+    st.image("https://http.cat/403", width=400)
+    st.stop()
 
 # ==========================================
 # GAVETA DE NOVIDADES (POP-UP)
 # ==========================================
-@st.dialog("🚀 Atualização de Infraestrutura: Painel ADM 3.0!")
+@st.dialog("🚀 Atualização de Sistema: Painel ADM 4.0!")
 def mostrar_novidades_adm_popup():
     st.markdown("""
-    Fala, Coordenação! O motor do nosso sistema acabou de passar por uma reestruturação profunda para alta escala. Veja o que mudou:
+    Prezada Coordenação, o sistema MultiPonto acaba de receber a **Versão 4.0**, com foco total em flexibilidade de gestão e conformidade com a CNRMS/MEC. Veja as novidades:
     
-    * 🛡️ **Custo Zero de Leitura no Raio-X:** A tela inicial agora utiliza *Agregadores Inteligentes*. Ela carrega instantaneamente sem consumir a cota diária do banco de dados.
-    * 📄 **Geração de PDF Sob Demanda:** Os relatórios de auditoria deixaram de ser gerados nos bastidores. O sistema agora só trabalha quando o botão "Gerar Relatório" é clicado!
-    * ⚡ **Fragmentação de Componentes:** As telas de lançamentos em lote agora atualizam apenas o necessário, deixando o painel ultra fluido.
-    * 🛣️ **Rodovias Expressas (Índices):** A busca de Extratos e Filtros agora conta com índices compostos no Google Cloud, respondendo em milissegundos.
-    * 🔒 **Bunker de Segurança (Firestore):** As regras do banco de dados foram reescritas e trancadas. O sistema bloqueia 100% de tentativas de acesso externo, garantindo proteção total aos dados da residência.
+    * ⚖️ **Motor Matemático CNRMS:** A calculadora foi ajustada cirurgicamente para as 60h semanais. O sistema agora computa automaticamente a variação do Eixo Específico (3h para 2h) e preenche as lacunas com o Estudo Auto-dirigido (AAD) para fechar 12h teóricas exatas por semana.
+    * 🏷️ **Gerenciador de Marcadores (Tags):** Na Aba de Gestão, agora é possível criar *Tags* (ex: "Ação Extramuro", "Compensação de Horas"). O residente ganha a hora oficial (Prática/Teórica), mas o registro e o PDF ganham o detalhamento da atividade!
+    * 🧹 **Limpeza e Padronização:** O sistema agora opera estritamente com as 8 categorias oficiais do MEC. Registros antigos fora do padrão são traduzidos e adaptados em tempo real na tela.
+    * ⚡ **Sincronização Instantânea (Auto-Cura):** Qualquer edição, exclusão ou lançamento em lote feito por você agora atualiza o "Raio-X Global" e os saldos na mesma fração de segundo.
+    * 🗂️ **Extrato Avançado:** O PDF de auditoria e a Timeline ganharam separação estrita de balanços entre Prática e Teórica.
     
-    *O sistema agora está blindado, ultra veloz e pronto para o uso contínuo!*
+    *O Painel Administrativo agora está 100% calibrado para auditorias formais.*
     """)
     
     st.write("")
     
     # Detalhe de UX: Mostra quantas visualizações restam no botão
-    views_restantes = 4 - st.session_state.contagem_update_v2
+    views_restantes = 4 - st.session_state.contagem_update_v4
     if views_restantes > 1:
-        texto_botao = f"Entendi, vamos lá! 🎉 (Aviso sumirá em {views_restantes} acessos)"
+        texto_botao = f"Ciente, vamos ao trabalho! (Aviso sumirá em {views_restantes} acessos)"
     else:
-        texto_botao = "Entendi, vamos lá! 🎉 (Último aviso)"
+        texto_botao = "Ciente, vamos ao trabalho! (Último aviso)"
 
     if st.button(texto_botao, type="primary", use_container_width=True):
         # Aumenta a contagem em +1
-        nova_contagem = st.session_state.contagem_update_v2 + 1
+        nova_contagem = st.session_state.contagem_update_v4 + 1
         
         # Salva o número no banco
         db.collection("config").document(f"admin_prefs_{st.session_state.uid}").set(
-            {"contagem_update_v2": nova_contagem}, merge=True
+            {"contagem_update_v4": nova_contagem}, merge=True
         )
-        st.session_state.contagem_update_v2 = nova_contagem
+        st.session_state.contagem_update_v4 = nova_contagem
         st.rerun()
 
 # ==========================================
 # GATILHO DO POP-UP (Repete até 4 vezes)
 # ==========================================
-if "contagem_update_v2" not in st.session_state:
+if "contagem_update_v4" not in st.session_state:
     admin_doc = db.collection("config").document(f"admin_prefs_{st.session_state.uid}").get()
     if admin_doc.exists:
         dados_admin = admin_doc.to_dict()
         # Lê o número do banco, se não existir, assume 0
-        st.session_state.contagem_update_v2 = dados_admin.get("contagem_update_v2", 0)
+        st.session_state.contagem_update_v4 = dados_admin.get("contagem_update_v4", 0)
     else:
-        st.session_state.contagem_update_v2 = 0
+        st.session_state.contagem_update_v4 = 0
 
 # Se o adm viu menos de 4 vezes, dispara o pop-up
-if st.session_state.contagem_update_v2 < 4:
+if st.session_state.contagem_update_v4 < 4:
     mostrar_novidades_adm_popup()
 
 # ==========================================
-# 2. CABEÇALHO DO MEGAZORD
+# 2. CABEÇALHO DO MEGAZORD E LOGOUT
 # ==========================================
-st.markdown("""
-<div style="background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%); padding: 30px; border-radius: 12px; color: white; display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-    <div>
-        <h1 style="margin: 0; font-size: 2.2rem; font-weight: 800; color: white;">👑 Centro de Comando ADM</h1>
-        <p style="margin: 5px 0 0 0; font-size: 1.1rem; opacity: 0.9;">Gestão completa da Residência Multiprofissional em Saúde</p>
-    </div>
-    <div style="background-color: rgba(255,255,255,0.2); padding: 10px 20px; border-radius: 8px; font-weight: 600;">
-        Acesso Nível: Alpha
-    </div>
-</div>
-""", unsafe_allow_html=True)
+c_header, c_logout = st.columns([8, 1])
 
-# --- BUSCA GLOBAL DE RESIDENTES (ANTES DAS ABAS) ---
+with c_header:
+    st.markdown("""
+    <div style="background: linear-gradient(90deg, #1e3a8a 0%, #3b82f6 100%); padding: 30px; border-radius: 12px; color: white; display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
+        <div>
+            <h1 style="margin: 0; font-size: 2.2rem; font-weight: 800; color: white;">Painel Administrativo da Residência</h1>
+            <p style="margin: 5px 0 0 0; font-size: 1.1rem; opacity: 0.9;">Gestão completa da Residência Multiprofissional em Saúde</p>
+        </div>
+        <div style="background-color: rgba(255,255,255,0.2); padding: 10px 20px; border-radius: 8px; font-weight: 600;">
+            Acesso Nível: Alpha
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+with c_logout:
+    st.markdown("<div style='margin-top: 40px;'></div>", unsafe_allow_html=True) # Alinha o botão verticalmente
+    if st.button("🚪 Sair", use_container_width=True):
+        st.session_state.clear() # Destrói todas as variáveis de login da memória
+        st.rerun() # Atualiza a página (o Leão de Chácara vai te chutar pro Login)
+
+# --- BUSCA GLOBAL DE RESIDENTES ---
 @st.cache_data(ttl=60, show_spinner=False)
 def carregar_residentes_adm():
     residentes_ref = db.collection("residentes").get()
     lista = []
-
     for doc in residentes_ref:
         dados = doc.to_dict()
         dados["uid"] = doc.id
         lista.append(dados)
-
     return lista
-
 
 try:
     lista_residentes = carregar_residentes_adm()
 except Exception as e:
     st.error(f"Erro ao buscar residentes globais: {e}")
     lista_residentes = []
-# ---------------------------------------------------
 
 # ==========================================
-# 3. NAVEGAÇÃO SUPERIOR (UX MODERNA)
-# ==========================================
-
-# ==========================================
-# UX NINJA: ESTILIZAÇÃO SUPREMA DAS ABAS
+# 3. NAVEGAÇÃO SUPERIOR
 # ==========================================
 st.markdown("""
 <style>
-    /* Espaçamento e linha de base das abas */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        border-bottom: 2px solid #e5e7eb;
-        padding-bottom: 0px;
-    }
-    /* Estilo padrão (Abas Inativas) */
-    .stTabs [data-baseweb="tab"] {
-        height: 55px;
-        background-color: #f3f4f6;
-        border-radius: 10px 10px 0 0;
-        padding: 10px 25px;
-        font-size: 1.15rem;
-        font-weight: 700;
-        color: #6b7280;
-        transition: all 0.3s ease-in-out;
-        border: 1px solid #e5e7eb;
-        border-bottom: none;
-    }
-    /* Estilo da Aba ATIVA (Selecionada) */
-    .stTabs [aria-selected="true"] {
-        background-color: #2563eb !important;
-        color: #ffffff !important;
-        border-color: #2563eb !important;
-    }
-    /* Efeito ao passar o mouse nas inativas */
-    .stTabs [data-baseweb="tab"]:hover:not([aria-selected="true"]) {
-        background-color: #e5e7eb;
-        color: #1f2937;
-    }
-    /* Esconde aquela linhazinha fina padrão do Streamlit */
-    .stTabs [data-baseweb="tab-highlight"] {
-        display: none;
-    }
+    .stTabs [data-baseweb="tab-list"] { gap: 8px; border-bottom: 2px solid #e5e7eb; padding-bottom: 0px; }
+    .stTabs [data-baseweb="tab"] { height: 55px; background-color: #f3f4f6; border-radius: 10px 10px 0 0; padding: 10px 25px; font-size: 1.15rem; font-weight: 700; color: #6b7280; transition: all 0.3s ease-in-out; border: 1px solid #e5e7eb; border-bottom: none; }
+    .stTabs [aria-selected="true"] { background-color: #2563eb !important; color: #ffffff !important; border-color: #2563eb !important; }
+    .stTabs [data-baseweb="tab"]:hover:not([aria-selected="true"]) { background-color: #e5e7eb; color: #1f2937; }
+    .stTabs [data-baseweb="tab-highlight"] { display: none; }
 </style>
 """, unsafe_allow_html=True)
 
-# Usamos abas nativas do Streamlit para não poluir a tela e dar sensação de um "App Único"
 aba1, aba2, aba3, aba4 = st.tabs([
     "📊 Visão Geral (Raio-X)", 
-    "👥 Gestão de Residentes", 
+    "👥 Gestão de Pessoal", 
     "⏳ Auditoria de Horas",
     "📥 Central de Lançamentos"
 ])
@@ -190,7 +197,6 @@ aba1, aba2, aba3, aba4 = st.tabs([
 # --- MÓDULO 1: VISÃO GERAL (RAIO-X GLOBAL) ---
 with aba1:
     import pandas as pd
-    import plotly.express as px
     import plotly.graph_objects as go
     import datetime as dt
     from datetime import date, timedelta
@@ -200,12 +206,10 @@ with aba1:
     if not lista_residentes:
             st.warning("⚠️ O sistema está vazio. Cadastre residentes no Módulo 2 para ver as métricas.")
     else:
-        # Novo Filtro de Status para o Raio-X
         c_filtro, _ = st.columns([1.5, 3])
         with c_filtro:
             filtro_rx = st.selectbox("Filtrar Exibição da Tropa:", ["Ativos (Padrão)", "Arquivo Interno (Inativos)", "Mostrar Todos"])
             
-        # Cria a lista filtrada baseada na escolha
         lista_rx = []
         for r in lista_residentes:
             st_r = r.get('status', 'Ativo')
@@ -214,10 +218,6 @@ with aba1:
             elif filtro_rx == "Mostrar Todos": lista_rx.append(r)
 
         with st.spinner("Sincronizando Banco de Horas e Gerando Extratos..."):
-            
-            # =========================================================
-            # PREPARAÇÃO PARA O MOTOR CENTRAL
-            # =========================================================
             data_inicio_residencia = dt.date(2026, 3, 2)
             hoje = dt.date.today()
             
@@ -239,11 +239,10 @@ with aba1:
                 if minutos == 0: return f"{sinal}{horas}h"
                 return f"{sinal}{horas}h {minutos:02d}m"
 
-            # --- GERADOR DO PDF NUBANK (ALTA PERFORMANCE E DETALHADO) ---
+            # --- GERADOR DO PDF ---
             def gerar_pdf_extrato(nome, nucleo, uid_res, todos_pontos, motor_res):
                 from fpdf import FPDF
                 
-                # 🚀 PUXANDO A VERDADE ABSOLUTA DO MOTOR
                 soma_meta_p = motor_res["esperado"]["pratica"]
                 soma_meta_t = motor_res["esperado"]["teorica"]
                 soma_trab_p = motor_res["cumprido"]["pratica"]
@@ -252,7 +251,6 @@ with aba1:
                 saldo_t_real = motor_res["saldos"]["teorica"]
                 saldo_global = motor_res["saldos"]["acumulado"]
 
-                # Constrói apenas as linhas do extrato (Ledger) para a parte visual do PDF
                 pontos_res = [p for p in todos_pontos if p.get('uid_residente') == uid_res]
                 pontos_por_data = {}
                 for pt in pontos_res:
@@ -279,11 +277,18 @@ with aba1:
                     for pt in pts_dia:
                         cat = pt.get('categoria', '')
                         h = float(pt.get('horas_computadas', 0.0))
-                        if pt.get('horarios_descritos'): horarios.extend(pt.get('horarios_descritos'))
+                        
+                        tag = pt.get("tag", "Rotina Padrão")
+                        desc_obs = pt.get('justificativa', '')
+                        if tag != "Rotina Padrão":
+                            desc_obs = f"[{tag}] {desc_obs}"
+                            
+                        if pt.get('horarios_descritos'): 
+                            horarios.extend([f"{h_d} | {desc_obs}" for h_d in pt.get('horarios_descritos')])
 
                         if cat == 'Prática': trab_p += h
-                        elif cat in ['Teórica', 'Teórico-prática']: trab_t += h
-                        elif cat in ['Férias', 'Falta', 'Ausência justificada', 'Atestado', 'Feriado', 'Licença', 'Ponto facultativo']:
+                        elif cat in ['Teórica', 'Teórico-prática', 'Estudo Auto-dirigido (AAD)']: trab_t += h
+                        elif cat in ['Férias', 'Falta', 'Ausência justificada', 'Ausência Justificada', 'Atestado', 'Atestado / Licença Médica', 'Feriado', 'Feriado / Ponto Facultativo', 'Licença', 'Ponto facultativo']:
                             is_ausencia = True
                             ausencia_nome = cat
 
@@ -306,7 +311,7 @@ with aba1:
                         historico.append({
                             'data_str': d_obj.strftime("%d/%m/%Y"),
                             'data_obj': d_obj,
-                            'horarios': " | ".join(horarios) if horarios else ("Sem relogio" if is_ausencia else ""),
+                            'horarios': " || ".join(horarios) if horarios else ("Sem relogio" if is_ausencia else ""),
                             'saldo_dia': saldo_total,
                             'acumulado': acum_p + acum_t,
                             'acum_p': acum_p,
@@ -325,18 +330,13 @@ with aba1:
                     if chave_mes not in extrato_por_mes: extrato_por_mes[chave_mes] = []
                     extrato_por_mes[chave_mes].append(item)
 
-                # ========================================================
-                # INÍCIO DO DESENHO DO PDF
-                # ========================================================
                 pdf = FPDF()
                 pdf.add_page()
                 
-                # Função interna para garantir a acentuação (Bypass de segurança do FPDF)
                 def txt(texto):
                     return str(texto).encode('latin-1', 'replace').decode('latin-1')
                 
-                # --- CAPA (DASHBOARD GERENCIAL) ---
-                pdf.set_fill_color(30, 58, 138) # Fundo Azul Escuro
+                pdf.set_fill_color(30, 58, 138)
                 pdf.rect(0, 0, 210, 35, 'F')
                 
                 pdf.set_y(12)
@@ -345,12 +345,11 @@ with aba1:
                 pdf.cell(0, 8, txt('RELATÓRIO EXECUTIVO - BANCO DE HORAS'), ln=1, align='C')
                 
                 pdf.set_font('Arial', '', 11)
-                pdf.set_text_color(209, 213, 219) # Cinza claro
+                pdf.set_text_color(209, 213, 219)
                 pdf.cell(0, 5, txt(f'Data da Emissão: {dt.datetime.now().strftime("%d/%m/%Y %H:%M")}'), ln=1, align='C')
                 
                 pdf.ln(15)
                 
-                # Dados do Residente
                 pdf.set_font('Arial', 'B', 14)
                 pdf.set_text_color(31, 41, 55)
                 pdf.cell(0, 6, txt(f"Residente: {nome}"), ln=1)
@@ -358,20 +357,14 @@ with aba1:
                 pdf.set_text_color(107, 114, 128)
                 pdf.cell(0, 6, txt(f"Núcleo Profissional: {nucleo}"), ln=1)
                 
-                # --- NOVO DASHBOARD EXECUTIVO DO PDF ---
-                
-                # 1. Agrega estatísticas por categoria (MOTOR CORRETO - IGUAL AO FILTRO INVESTIGATIVO)
                 cat_stats = {}
-                
                 for pt in pontos_res:
                     c = pt.get('categoria', 'Outros')
-                    if c.upper() == "ATESTADO": c = "Atestado"
-                    elif c.upper() == "FERIADO": c = "Feriado"
+                    if c.upper() == "ATESTADO" or c.upper() == "LICENÇA" or c.upper() == "ATESTADO / LICENÇA MÉDICA": c = "Atestado / Licença Médica"
+                    elif c.upper() == "FERIADO" or c.upper() == "PONTO FACULTATIVO" or c.upper() == "FERIADO / PONTO FACULTATIVO": c = "Feriado / Ponto Facultativo"
                     elif c.upper() == "FALTA": c = "Falta"
-                    elif c.upper() == "PONTO FACULTATIVO": c = "Ponto facultativo"
                     elif c.upper() == "FÉRIAS": c = "Férias"
-                    elif c.upper() == "AUSÊNCIA JUSTIFICADA": c = "Ausência justificada"
-                    elif c.upper() == "LICENÇA": c = "Licença"
+                    elif c.upper() in ["AUSÊNCIA JUSTIFICADA", "AUSENCIA JUSTIFICADA"]: c = "Ausência Justificada"
                     
                     if c not in cat_stats: 
                         cat_stats[c] = {'horas_trab': 0.0, 'ocorrencias': 0, 'debito_p': 0.0, 'debito_t': 0.0}
@@ -380,8 +373,7 @@ with aba1:
                     cat_stats[c]['horas_trab'] += horas_comp
                     cat_stats[c]['ocorrencias'] += 1
 
-                    # LÓGICA DE AUDITORIA REAL: Cruzando a data exata com o motor de metas
-                    if c in ["Ausência justificada", "Falta", "Feriado", "Licença", "Atestado", "Ponto facultativo"]:
+                    if c in ["Ausência Justificada", "Falta", "Feriado / Ponto Facultativo", "Atestado / Licença Médica"]:
                         data_str = pt.get("data_registro", "")
                         if data_str:
                             dt_obj = dt.datetime.strptime(data_str, "%Y-%m-%d").date()
@@ -390,7 +382,6 @@ with aba1:
                             deb_p = p_dia
                             deb_t = t_dia
                             
-                            # Se lançou alguma hora no dia de falta/atestado, abate da dívida primeiro da prática
                             if horas_comp > 0:
                                 if deb_p >= horas_comp: 
                                     deb_p -= horas_comp
@@ -408,13 +399,8 @@ with aba1:
                 pdf.cell(0, 8, txt("1. SALDOS ACUMULADOS (PRÁTICA E TEÓRICA)"), border='B', ln=1)
                 pdf.ln(4)
                 
-                saldo_p_real = soma_trab_p - soma_meta_p
-                saldo_t_real = soma_trab_t - soma_meta_t
-                saldo_global = saldo_p_real + saldo_t_real
-                
                 y_saldos = pdf.get_y()
                 
-                # --- BOX: SALDO PRÁTICA ---
                 pdf.set_fill_color(243, 244, 246)
                 pdf.rect(10, y_saldos, 60, 18, 'F')
                 pdf.set_y(y_saldos + 2)
@@ -431,7 +417,6 @@ with aba1:
                     pdf.set_text_color(220, 38, 38)
                     pdf.cell(60, 8, f"-{formatar_horas_adm_pdf(abs(saldo_p_real))} (Falta)", align='C', ln=1)
 
-                # --- BOX: SALDO TEÓRICA ---
                 pdf.set_y(y_saldos)
                 pdf.set_x(75)
                 pdf.set_fill_color(243, 244, 246)
@@ -450,7 +435,6 @@ with aba1:
                     pdf.set_text_color(220, 38, 38)
                     pdf.cell(60, 8, f"-{formatar_horas_adm_pdf(abs(saldo_t_real))} (Falta)", align='C', ln=1)
 
-                # --- BOX: SALDO GLOBAL ---
                 pdf.set_y(y_saldos)
                 pdf.set_x(140)
                 cor_bg_global = (220, 252, 231) if saldo_global >= 0 else (254, 226, 226)
@@ -472,7 +456,6 @@ with aba1:
 
                 pdf.ln(8)
                 
-                # --- PROGRESSO GRÁFICO ---
                 pdf.set_font('Arial', 'B', 12)
                 pdf.set_text_color(55, 65, 81)
                 pdf.cell(0, 8, txt("2. CUMPRIMENTO DE METAS (PROGRESSO)"), border='B', ln=1)
@@ -507,24 +490,21 @@ with aba1:
                 
                 pdf.ln(6)
                 
-# --- MATRIZ DE CATEGORIAS (DESIGN PREMIUM E AUDITORIA REAL) ---
                 pdf.set_font('Arial', 'B', 12)
                 pdf.set_text_color(55, 65, 81)
                 pdf.cell(0, 8, txt("3. DISTRIBUIÇÃO POR CATEGORIA (OCORRÊNCIAS TOTAIS)"), border='B', ln=1)
                 pdf.ln(4)
                 
-                # Paleta completa incluindo Licenças e Ausências Justificadas
                 paleta_pdf = {
                     "PRÁTICA": {"cor": (22, 163, 74), "bg": (220, 252, 231)},
                     "TEÓRICA": {"cor": (139, 92, 246), "bg": (243, 232, 255)},
                     "TEÓRICO-PRÁTICA": {"cor": (202, 138, 4), "bg": (254, 240, 138)},
-                    "ATESTADO": {"cor": (234, 88, 12), "bg": (255, 237, 213)},
+                    "ESTUDO AUTO-DIRIGIDO (AAD)": {"cor": (202, 138, 4), "bg": (254, 240, 138)},
+                    "ATESTADO / LICENÇA MÉDICA": {"cor": (234, 88, 12), "bg": (255, 237, 213)},
                     "FALTA": {"cor": (220, 38, 38), "bg": (254, 226, 226)},
                     "FÉRIAS": {"cor": (2, 132, 199), "bg": (224, 242, 254)},
-                    "FERIADO": {"cor": (30, 64, 175), "bg": (219, 234, 254)},
-                    "PONTO FACULTATIVO": {"cor": (13, 148, 136), "bg": (204, 251, 241)},
-                    "AUSÊNCIA JUSTIFICADA": {"cor": (234, 179, 8), "bg": (254, 249, 195)},
-                    "LICENÇA": {"cor": (14, 165, 233), "bg": (224, 242, 254)}
+                    "FERIADO / PONTO FACULTATIVO": {"cor": (30, 64, 175), "bg": (219, 234, 254)},
+                    "AUSÊNCIA JUSTIFICADA": {"cor": (234, 179, 8), "bg": (254, 249, 195)}
                 }
                 
                 col_w = 63
@@ -539,42 +519,34 @@ with aba1:
                     
                     x_pos = x_start + (col_index * col_w)
                     
-                    # 1. Fundo do Card
                     pdf.set_fill_color(248, 250, 252)
                     pdf.rect(x_pos, start_y, col_w - 3, 16, 'F')
                     
-                    # 2. Borda Lateral Colorida
                     pdf.set_fill_color(*estilo["cor"])
                     pdf.rect(x_pos, start_y, 1.5, 16, 'F')
                     
-                    # 3. Badge (Etiqueta de Fundo Colorido)
                     pdf.set_fill_color(*estilo["bg"])
                     pdf.rect(x_pos + 3, start_y + 1.5, col_w - 9, 4.5, 'F')
                     
-                    # 4. Texto do Título
                     pdf.set_xy(x_pos + 3, start_y + 1.5)
-                    pdf.set_font('Arial', 'B', 6.5)
+                    pdf.set_font('Arial', 'B', 6)
                     pdf.set_text_color(*estilo["cor"])
                     pdf.cell(col_w - 9, 4.5, txt(cat_upper), border=0, ln=0, align='C')
                     
-                    # 5. LÓGICA DE EXIBIÇÃO DE AUDITORIA
                     pdf.set_xy(x_pos + 3, start_y + 7.5)
                     pdf.set_text_color(31, 41, 55)
                     
-                    if cat_upper in ["PRÁTICA", "TEÓRICA", "TEÓRICO-PRÁTICA"]:
-                        # Exibe horas normais trabalhadas
+                    if cat_upper in ["PRÁTICA", "TEÓRICA", "ESTUDO AUTO-DIRIGIDO (AAD)", "TEÓRICO-PRÁTICA"]:
                         pdf.set_font('Arial', 'B', 9)
                         horas_str = formatar_horas_adm_pdf(dados['horas_trab'])
                         pdf.cell(col_w - 9, 4, txt(f"{horas_str}"), border=0, ln=0, align='C')
                         
                     elif cat_upper == "FÉRIAS":
-                        # Férias não geram débito, geram Abono Oficial
                         pdf.set_font('Arial', 'B', 7.5)
                         pdf.set_text_color(2, 132, 199)
                         pdf.cell(col_w - 9, 4, txt("Abono Integral (Férias)"), border=0, ln=0, align='C')
                         
                     else:
-                        # Para ausências que geram DÍVIDA
                         pdf.set_font('Arial', 'B', 6.5)
                         deb_p = dados.get('debito_p', 0.0)
                         deb_t = dados.get('debito_t', 0.0)
@@ -585,11 +557,9 @@ with aba1:
                         if deb_p == 0 and deb_t == 0:
                             pdf.cell(col_w - 9, 4, txt("S/ Débito (Fora de Escala)"), border=0, ln=0, align='C')
                         else:
-                            # Adicionando o sinal de MENOS vermelho visualmente
                             pdf.set_text_color(220, 38, 38)
                             pdf.cell(col_w - 9, 4, txt(f"Débito: -{str_dp}(P) | -{str_dt}(T)"), border=0, ln=0, align='C')
                     
-                    # 6. Cômputo Exato de Dias
                     pdf.set_xy(x_pos + 3, start_y + 12)
                     pdf.set_font('Arial', '', 7)
                     pdf.set_text_color(107, 114, 128)
@@ -611,9 +581,6 @@ with aba1:
                 pdf.multi_cell(0, 4, txt("Nota: O detalhamento acima compila as horas computadas e as DÍVIDAS exatas geradas por ausências. Dias perfeitamente batidos sem ocorrências extras são ocultados do extrato abaixo."))
                 pdf.ln(3)
 
-                # ========================================================
-                # EXTRATO DIVIDIDO POR MESES
-                # ========================================================
                 for mes, itens_mes in extrato_por_mes.items():
                     if pdf.get_y() > 240: pdf.add_page()
                     
@@ -632,7 +599,9 @@ with aba1:
 
                         pdf.set_font('Arial', 'B', 9)
                         pdf.set_text_color(107, 114, 128)
-                        pdf.cell(0, 5, txt(f"{item['data_str']} - {item['horarios']}"), ln=1)
+                        
+                        texto_horario = item['horarios'][:80] + "..." if len(item['horarios']) > 80 else item['horarios']
+                        pdf.cell(0, 5, txt(f"{item['data_str']} - {texto_horario}"), ln=1)
 
                         if item['saldo_dia'] > 0:
                             cor_titulo = (22, 163, 74)
@@ -646,7 +615,6 @@ with aba1:
 
                         y_blocos = pdf.get_y()
 
-                        # Esquerda
                         pdf.set_text_color(*cor_titulo)
                         pdf.set_font('Arial', 'B', 10)
                         pdf.cell(120, 5, txt(titulo), border=0, ln=1)
@@ -659,7 +627,6 @@ with aba1:
                         
                         y_esquerda = pdf.get_y()
 
-                        # Direita
                         pdf.set_y(y_blocos)
                         pdf.set_x(130)
                         pdf.set_text_color(*cor_titulo)
@@ -703,9 +670,6 @@ with aba1:
                 if isinstance(out, str): return out.encode('latin-1', 'replace')
                 return bytes(out)
 
-            # ==========================================
-            # CALCULA A META GLOBAL (APENAS 1 VEZ PARA TODOS)
-            # ==========================================
             meta_global_pratica = 0.0
             meta_global_teorica = 0.0
             
@@ -718,9 +682,6 @@ with aba1:
             
             meta_global_total = meta_global_pratica + meta_global_teorica
 
-            # ==========================================
-            # PROCESSAMENTO DA TROPA (CUSTO ZERO DE LEITURAS - VIA AGREGADORES)
-            # ==========================================
             dados_tropa = []
             total_horas_realizadas = 0.0
             residentes_desatualizados = 0
@@ -733,7 +694,6 @@ with aba1:
                 
                 agregador = res.get('agregadores')
                 
-                # 🚀 SISTEMA DE AUTO-CURA (Roda só 1x na vida caso o residente nunca tenha sido sincronizado)
                 if not agregador:
                     pt_ref = db.collection("pontos").where("uid_residente", "==", uid).get()
                     pts = [p.to_dict() for p in pt_ref]
@@ -755,7 +715,6 @@ with aba1:
                     }
                     db.collection("residentes").document(uid).update({"agregadores": agregador})
 
-                # Usa os dados já calculados e salvos (Super Veloz)
                 feito_p = agregador.get("pratica_realizada", 0.0)
                 feito_t = agregador.get("teorica_realizada", 0.0)
                 total_trabalhado = agregador.get("total_trabalhado", 0.0)
@@ -799,9 +758,6 @@ with aba1:
 
             df_tropa = pd.DataFrame(dados_tropa)
 
-            # ==========================================
-            # LINHA DE CARDS SUPERIORES E GRÁFICOS
-            # ==========================================
             c1, c2, c3, c4 = st.columns(4)
             with c1:
                 st.markdown(f"<div style='background-color: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e5e7eb; border-left: 5px solid #3b82f6;'><div style='color: #6b7280; font-weight: 700; font-size: 0.85rem; text-transform: uppercase;'>Meta por Residente</div><div style='color: #1e3a8a; font-size: 2.2rem; font-weight: 800; margin-top: 5px;'>{meta_global_total:,.1f}h</div><div style='color: #6b7280; font-size: 0.8rem; margin-top: 5px;'>Acumulado até hoje</div></div>", unsafe_allow_html=True)
@@ -816,7 +772,6 @@ with aba1:
                 cor_alerta_app = "#dc2626" if residentes_desatualizados > 0 else "#16a34a"
                 st.markdown(f"<div style='background-color: #f8fafc; padding: 20px; border-radius: 12px; border: 1px solid #e5e7eb; border-left: 5px solid {cor_alerta_app};'><div style='color: #6b7280; font-weight: 700; font-size: 0.85rem; text-transform: uppercase;'>App Desatualizado</div><div style='color: {cor_alerta_app}; font-size: 2.2rem; font-weight: 800; margin-top: 5px;'>{residentes_desatualizados}</div><div style='color: #6b7280; font-size: 0.8rem; margin-top: 5px;'>Atraso > 7 dias</div></div>", unsafe_allow_html=True)
 
-            # GRÁFICOS
             st.markdown("<hr style='border-color: #e5e7eb; margin-top: 30px; margin-bottom: 30px;'><h4 style='color: #374151; font-weight: 800; font-size: 1.4rem; margin-bottom: 5px;'>⚖️ Produção Acumulada por Residente</h4><span style='color: #6b7280; font-size: 0.95rem;'>Acompanhamento detalhado do desempenho em cada eixo da residência.</span>", unsafe_allow_html=True)
             
             if not df_tropa.empty:
@@ -837,9 +792,6 @@ with aba1:
                 fig_t.update_layout(barmode='group', showlegend=True, margin=dict(l=0, r=0, t=15, b=0), height=altura_grafico, plot_bgcolor="rgba(0,0,0,0)", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, font=dict(size=14, weight='bold')), xaxis=dict(showgrid=True, gridcolor="#e5e7eb", zeroline=False), yaxis=dict(tickfont=dict(size=13, weight='bold', color='#1f2937')))
                 st.plotly_chart(fig_t, use_container_width=True, config={'displayModeBar': False})
 
-            # ==========================================
-            # 7. LISTA DE AUDITORIA PREMIUM + BOTÃO DE PDF
-            # ==========================================
             st.markdown("<hr style='border-color: #e5e7eb; margin-top: 40px; margin-bottom: 30px;'>", unsafe_allow_html=True)
             st.markdown("<h4 style='color: #374151; font-weight: 700; margin-bottom: 15px;'>🧾 Auditoria Detalhada de Banco de Horas</h4>", unsafe_allow_html=True)
             
@@ -916,12 +868,10 @@ with aba1:
                         with col_btn:
                             st.markdown("<div style='margin-top: 25px;'></div>", unsafe_allow_html=True)
                             
-                            # 🚀 O SEGREDO DO PDF: Fragmentado e Gerado Sob Demanda!
                             @st.fragment
                             def renderizar_btn_pdf(u_frag, n_frag, p_frag):
                                 if st.button("📄 Gerar Relatório", key=f"btn_prep_pdf_{u_frag}", use_container_width=True):
                                     with st.spinner("Compilando..."):
-                                        # 1. Puxa os pontos APENAS desse residente específico e NA HORA do clique! (100% de economia)
                                         pt_ref = db.collection("pontos").where("uid_residente", "==", u_frag).get()
                                         pts_frag = [pt.to_dict() for pt in pt_ref]
                                         
@@ -937,13 +887,12 @@ with aba1:
 
                             renderizar_btn_pdf(uid_row, nome, nucleo)
 
-# --- MÓDULO 2: GESTÃO DE RESIDENTES ---
+# --- MÓDULO 2: GESTÃO DE Pessoal e Categorias ---
 with aba2:
-    st.markdown("<div class='card-title' style='margin-bottom: 20px;'>Gestão de Pessoal</div>", unsafe_allow_html=True)
+    st.markdown("<div class='card-title' style='margin-bottom: 20px;'>Gestão de Pessoal e Categorias</div>", unsafe_allow_html=True)
 
     col_lista, col_cadastro = st.columns([1.5, 1], gap="large")
 
-    #Gerenciador de Núcleos
     with st.expander("⚙️ Configurações de Núcleos Profissionais"):
         nucleos_atuais = carregar_nucleos()
         
@@ -960,7 +909,6 @@ with aba2:
                     st.rerun()
 
         st.markdown("##### Núcleos Cadastrados:")
-        # Exibe cada núcleo com um botão de exclusão
         for n in nucleos_atuais:
             c_label, c_del = st.columns([4, 1])
             c_label.write(f"- {n}")
@@ -973,19 +921,47 @@ with aba2:
                 else:
                     st.error("Você precisa de pelo menos um núcleo.")
 
-# --- LADO ESQUERDO: LISTA DE RESIDENTES (AGRUPADA POR TURMA E NÚCLEO) ---
+    # NOVO: Gerenciador de Tags de Atividade
+    with st.expander("🏷️ Configurações de Marcadores (Tags de Atividade)"):
+        st.markdown("<span style='font-size: 0.85rem; color: #6b7280;'>Crie marcadores livres (ex: 'Ação Extramuro', 'Mutirão') para anexar aos registros sem quebrar a matemática do MEC.</span>", unsafe_allow_html=True)
+        tags_atuais = carregar_tags()
+        
+        c_tag1, c_tag2 = st.columns([2, 1])
+        with c_tag1:
+            nova_tag = st.text_input("Adicionar novo marcador:", placeholder="Ex: Produção de Vídeo")
+        with c_tag2:
+            st.write("<br>", unsafe_allow_html=True)
+            if st.button("➕ Adicionar Tag", type="secondary"):
+                if nova_tag and nova_tag not in tags_atuais:
+                    tags_atuais.append(nova_tag)
+                    salvar_tags(tags_atuais)
+                    carregar_tags.clear()
+                    st.rerun()
+
+        st.markdown("##### Marcadores Cadastrados:")
+        for t in tags_atuais:
+            c_label, c_del = st.columns([4, 1])
+            c_label.write(f"🏷️ {t}")
+            if c_del.button("🗑️", key=f"del_tag_{t}"):
+                if len(tags_atuais) > 1:
+                    tags_atuais.remove(t)
+                    salvar_tags(tags_atuais)
+                    carregar_tags.clear()
+                    st.rerun()
+                else:
+                    st.error("Você precisa de pelo menos uma tag padrão.")
+
     with col_lista:
         st.markdown("<h3 style='color: #374151; font-size: 1.3rem; font-weight: 700;'>📋 Equipe por Turma e Núcleo</h3>", unsafe_allow_html=True)
         
         if not lista_residentes:
             st.info("Nenhum residente cadastrado no sistema ainda.")
         else:
-            # Lógica de Agrupamento Triplo (Status -> Turma -> Núcleo)
             grupos_anos = {"R1": {}, "R2": {}}
             arquivo_morto = []
             
             for res in sorted(lista_residentes, key=lambda x: x.get('nome_completo', '')):
-                status_atual = res.get('status', 'Ativo') # Se não tiver status gravado, assume que está Ativo
+                status_atual = res.get('status', 'Ativo')
                 ano_res = res.get('ano_residencia', 'R1')
                 prof = res.get('profissao', 'Outros')
                 
@@ -996,9 +972,6 @@ with aba2:
                 else:
                     arquivo_morto.append(res)
             
-            # ==========================================
-            # 1. EXIBIÇÃO DAS TURMAS ATIVAS
-            # ==========================================
             for ano in ["R1", "R2"]:
                 if grupos_anos[ano]:
                     cor_turma = "#1e3a8a" if ano == "R1" else "#047857"
@@ -1027,7 +1000,6 @@ with aba2:
                             ano_atual = res.get('ano_residencia', 'R1')
                             
                             with st.container(border=True):
-                                # Card de Exibição
                                 st.markdown(f"""
                                 <div style='display: flex; justify-content: space-between; align-items: center;'>
                                     <div>
@@ -1041,7 +1013,6 @@ with aba2:
                                 </div>
                                 """, unsafe_allow_html=True)
                                 
-                                # Gaveta de Edição Completa
                                 with st.expander("⚙️ Editar Dados ou Alterar Status"):
                                     with st.form(f"form_edit_{uid_res}", border=False):
                                         e_nome = st.text_input("Nome Completo", value=res.get('nome_completo', ''))
@@ -1055,7 +1026,6 @@ with aba2:
                                         if idx_prof is None:
                                             st.warning(f"⚠️ Atenção: O núcleo anterior deste residente ('{prof}') foi excluído. Vincule-o a um novo núcleo válido.")
                                         
-                                        # Agora com 3 colunas para acomodar o Status
                                         c3, c4, c5 = st.columns([2, 1, 1.5])
                                         e_prof = c3.selectbox("Núcleo / Profissão", profissoes_base, index=idx_prof, placeholder="Selecione...")
                                         e_ano = c4.selectbox("Turma", ["R1", "R2"], index=0 if ano_atual == "R1" else 1)
@@ -1096,9 +1066,6 @@ with aba2:
                                         except Exception as e:
                                             st.error(f"Erro ao resetar: {e}")
 
-            # ==========================================
-            # 2. EXIBIÇÃO DO ARQUIVO INTERNO (INATIVOS)
-            # ==========================================
             if arquivo_morto:
                 st.markdown("<hr style='border-color: #e5e7eb; margin: 40px 0 20px 0;'>", unsafe_allow_html=True)
                 with st.expander(f"🗄️ Arquivo Interno (Egressos e Inativos) - {len(arquivo_morto)} registros", expanded=False):
@@ -1125,7 +1092,6 @@ with aba2:
                             </div>
                             """, unsafe_allow_html=True)
                             
-                            # Mini gaveta para reativar ou excluir o residente
                             with st.expander("⚙️ Reativar, Alterar Status ou Excluir"):
                                 with st.form(f"form_reativar_{uid_res}", border=False):
                                     lista_status_op = ["Ativo", "Egresso (Graduado)", "Desistente", "Desligado"]
@@ -1143,9 +1109,6 @@ with aba2:
                                         except Exception as e:
                                             st.error(f"Erro ao atualizar: {e}")
                                 
-                                # ==========================================
-                                # ZONA DE PERIGO: EXCLUSÃO PERMANENTE
-                                # ==========================================
                                 st.markdown("<hr style='border-color: #fca5a5; margin: 15px 0;'>", unsafe_allow_html=True)
                                 st.markdown("<span style='color: #dc2626; font-weight: 800;'>⚠️ Zona de Perigo: Exclusão Permanente</span>", unsafe_allow_html=True)
                                 st.markdown("<span style='color: #ef4444; font-size: 0.85rem;'>Atenção: Esta ação apagará a ficha do residente e revogará seu acesso (Login) permanentemente.</span>", unsafe_allow_html=True)
@@ -1155,9 +1118,7 @@ with aba2:
                                 if checkbox_confirmar:
                                     if st.button("🗑️ Excluir Residente Definitivamente", type="primary", key=f"btn_excluir_{uid_res}"):
                                         try:
-                                            # 1. Remove a ficha do banco de dados (Firestore)
                                             db.collection("residentes").document(uid_res).delete()
-                                            # 2. Remove o acesso de login do Firebase (Auth)
                                             try:
                                                 auth.delete_user(uid_res)
                                             except Exception as auth_e:
@@ -1168,7 +1129,6 @@ with aba2:
                                         except Exception as e:
                                             st.error(f"Erro ao excluir residente: {e}")
 
-    # --- LADO DIREITO: FORMULÁRIO DE NOVO CADASTRO ---
     with col_cadastro:
         st.markdown("<h3 style='color: #374151; font-size: 1.3rem; font-weight: 700;'>➕ Novo Residente</h3>", unsafe_allow_html=True)
         
@@ -1226,7 +1186,6 @@ with aba2:
 
 # --- MÓDULO 3: AUDITORIA DE HORAS (MÁQUINA DO TEMPO & EXTRATO) ---
 with aba3:
-    # Função interna para formatar os decimais perfeitamente na tela do ADM
     def formatar_horas_exatas_adm(horas_decimais):
         sinal = "-" if horas_decimais < 0 else ""
         horas_decimais = abs(horas_decimais)
@@ -1243,20 +1202,14 @@ with aba3:
     if not lista_residentes:
         st.warning("⚠️ Cadastre um residente no Módulo 2 primeiro.")
     else:
-        # --- FILTRO MESTRE (Serve para as duas sub-abas) ---
         st.markdown("<div style='font-weight: 600; color: #374151; margin-bottom: 5px;'>Selecione o Residente alvo da Auditoria:</div>", unsafe_allow_html=True)
         dict_residentes = {f"{r.get('nome_completo')} ({r.get('profissao')})": r.get('uid') for r in lista_residentes}
         residente_selecionado = st.selectbox("Residente", options=list(dict_residentes.keys()), label_visibility="collapsed", key="sel_res_auditoria")
         uid_alvo = dict_residentes[residente_selecionado]
 
         st.write("")
-        
-        # Criação das Sub-Abas para não poluir a tela
         sub_aba_diaria, sub_aba_mensal, sub_aba_filtros = st.tabs(["📅 Edição Diária", "🏦 Extrato Mensal", "🔍 Filtro Investigativo"])
 
-# ========================================================
-        # SUB-ABA 1: A MÁQUINA DO TEMPO (Injeção e Edição Diária)
-        # ========================================================
         with sub_aba_diaria:
             import datetime as dt
             
@@ -1277,7 +1230,6 @@ with aba3:
 
             col_registros, col_injetar = st.columns([1.5, 1], gap="large")
 
-            # --- LADO ESQUERDO: O QUE TEM NO DIA (COM EDIÇÃO) ---
             with col_registros:
                 st.markdown(f"<h3 style='color: #1e40af; font-size: 1.2rem; font-weight: 700;'>🔎 Registros salvos em {data_auditoria.strftime('%d/%m/%Y')}</h3>", unsafe_allow_html=True)
                 
@@ -1287,6 +1239,8 @@ with aba3:
                     for pt in pontos_alvo:
                         cat = pt.get("categoria", "")
                         horas_decimais = pt.get("horas_computadas", 0.0)
+                        
+                        tag = pt.get("tag", "Rotina Padrão")
                         obs = pt.get("justificativa", "Sem observações")
                         horarios = " | ".join(pt.get("horarios_descritos", []))
                         if not horarios: horarios = ""
@@ -1295,12 +1249,12 @@ with aba3:
                         horas_formatadas = formatar_horas_exatas_adm(horas_decimais)
                         
                         with st.container(border=True):
-                            # Visão Resumida do Card
                             st.markdown(f"""
                             <div style='display: flex; justify-content: space-between;'>
                                 <div>
                                     <span style='font-weight: 800; color: {cor_borda}; font-size: 1.1rem;'>{cat}</span><br>
                                     <span style='font-size: 0.85rem; color: #6b7280;'>🕛 {horarios if horarios else "Dia Integral / Sem relógio"}</span><br>
+                                    <span style='font-size: 0.85rem; color: #1e3a8a; font-weight: 600;'>🏷️ {tag}</span><br>
                                     <span style='font-size: 0.85rem; color: #4b5563; font-style: italic;'>"{obs}"</span>
                                 </div>
                                 <div style='text-align: right; font-weight: 800; font-size: 1.3rem; color: {cor_borda};'>
@@ -1309,9 +1263,7 @@ with aba3:
                             </div>
                             """, unsafe_allow_html=True)
                             
- # A GAVETA DE EDIÇÃO SUPREMA DO ADM
                             with st.expander("✏️ Editar ou Excluir Registro"):
-                                # Quebra o decimal atual em HH e MM para preencher o formulário
                                 h_atual = int(abs(horas_decimais))
                                 m_atual = int(round((abs(horas_decimais) - h_atual) * 60))
                                 if m_atual == 60:
@@ -1319,10 +1271,12 @@ with aba3:
                                     m_atual = 0
                                 
                                 with st.form(key=f"form_edit_{pt['doc_id']}", border=False):
-                                    opcoes_cat = ["Prática", "Teórica", "Teórico-prática", "Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "Ponto facultativo"]
-                                    idx_cat = opcoes_cat.index(cat) if cat in opcoes_cat else 0
+                                    idx_cat = CATEGORIAS_OFICIAIS.index(cat) if cat in CATEGORIAS_OFICIAIS else 0
+                                    e_cat = st.selectbox("Categoria Oficial", CATEGORIAS_OFICIAIS, index=idx_cat)
                                     
-                                    e_cat = st.selectbox("Categoria", opcoes_cat, index=idx_cat)
+                                    lista_tags_edit = carregar_tags()
+                                    idx_tag = lista_tags_edit.index(tag) if tag in lista_tags_edit else 0
+                                    e_tag = st.selectbox("Marcador / Tag (Opcional)", lista_tags_edit, index=idx_tag)
                                     
                                     st.markdown("<span style='font-size: 0.85rem; color: #d97706; font-weight: 600;'>Opção A: Lançamento Manual (Para Atestados/Faltas)</span>", unsafe_allow_html=True)
                                     c_h, c_m = st.columns(2)
@@ -1337,16 +1291,12 @@ with aba3:
                                     
                                     btn_salvar_edicao = st.form_submit_button("💾 Salvar Alterações", type="primary", use_container_width=True)
                                 
-                                # Ações dos Botões
                                 if btn_salvar_edicao:
                                     try:
                                         novos_horarios_lista = [h.strip() for h in e_horarios.split("|") if h.strip()]
                                         horas_calculadas = 0.0
                                         recalculo_ativado = False
                                         
-                                        # ==========================================
-                                        # O MOTOR EXTRATOR DE HORAS
-                                        # ==========================================
                                         if any("às" in h for h in novos_horarios_lista):
                                             for turno in novos_horarios_lista:
                                                 if "às" in turno:
@@ -1354,17 +1304,14 @@ with aba3:
                                                         ent, sai = turno.split(" às ")
                                                         h1, m1 = map(int, ent.strip().split(":"))
                                                         h2, m2 = map(int, sai.strip().split(":"))
-                                                        
                                                         min_ent = h1 * 60 + m1
                                                         min_sai = h2 * 60 + m2
-                                                        if min_sai < min_ent: min_sai += 24 * 60 # Caso vire a madrugada
-                                                        
+                                                        if min_sai < min_ent: min_sai += 24 * 60
                                                         horas_calculadas += (min_sai - min_ent) / 60.0
                                                         recalculo_ativado = True
                                                     except:
-                                                        pass # Se estiver mal digitado, ele pula e ignora
+                                                        pass
                                         
-                                        # Se o sistema achou horas válidas no texto, ele usa elas. Senão, usa o manual.
                                         if recalculo_ativado and horas_calculadas > 0:
                                             nova_hora_decimal = horas_calculadas
                                         else:
@@ -1372,17 +1319,16 @@ with aba3:
                                             mm_val = int(e_m) if e_m and e_m.isdigit() else 0
                                             nova_hora_decimal = hh_val + (mm_val / 60.0)
                                             
-                                        # ==========================================
-
                                         db.collection("pontos").document(pt['doc_id']).update({
                                             "categoria": e_cat,
+                                            "tag": e_tag,
                                             "horas_computadas": nova_hora_decimal,
                                             "horarios_descritos": novos_horarios_lista,
                                             "justificativa": e_obs,
                                             "ultima_edicao": firestore.SERVER_TIMESTAMP
                                         })
 
-
+                                        invalidar_agregador(uid_alvo)
                                         st.success("✅ Registro atualizado com sucesso!")
                                         st.rerun()
                                     except Exception as e:
@@ -1390,15 +1336,16 @@ with aba3:
                                 
                                 if st.button("🗑️ Forçar Exclusão", key=f"del_adm_{pt['doc_id']}", use_container_width=True):
                                     db.collection("pontos").document(pt['doc_id']).delete()
+                                    invalidar_agregador(uid_alvo)
                                     st.success("✅ Ponto obliterado pelo Administrador!")
                                     st.rerun()
 
-            # --- LADO DIREITO: INJEÇÃO DE HORAS ---
             with col_injetar:
                 st.markdown("<h3 style='color: #d97706; font-size: 1.2rem; font-weight: 700;'>💉 Injetar Horas Manualmente</h3>", unsafe_allow_html=True)
                 
                 with st.form("form_injetar_adm", clear_on_submit=True):
-                    i_cat = st.selectbox("Categoria", ["Prática", "Teórica", "Teórico-prática", "Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "Ponto facultativo"])
+                    i_cat = st.selectbox("Categoria Oficial", CATEGORIAS_OFICIAIS)
+                    i_tag_injecao = st.selectbox("Marcador / Tag (Opcional)", carregar_tags())
                     
                     st.info("💡 **Atenção:** Se for ausência de dia integral, deixe as horas zeradas.")
                     
@@ -1423,6 +1370,7 @@ with aba3:
                             "data_registro": data_str_alvo,
                             "mes_referencia": data_auditoria.strftime("%m/%Y"),
                             "categoria": i_cat,
+                            "tag": i_tag_injecao,
                             "horas_computadas": horas_finais_decimais,
                             "horarios_descritos": [f"{hh_val:02d}h {mm_val:02d}m (Lançado via Painel ADM)"],
                             "justificativa": f"{i_obs} (Alteração realizada pela Coordenação)" if i_obs else "(Alteração ADM)",
@@ -1431,19 +1379,16 @@ with aba3:
                         
                         try:
                             db.collection("pontos").document(doc_id_inj).set(dados_inj)
+                            invalidar_agregador(uid_alvo)
                             st.success("✅ Registro injetado com sucesso!")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Erro ao injetar horas: {e}")
 
-        # ========================================================
-        # SUB-ABA 2: O EXTRATO NUBANK (Visão Mensal)
-        # ========================================================
         with sub_aba_mensal:
             import datetime as dt
             import calendar
             
-            # Puxa os meses disponíveis baseados no ciclo
             meses_disponiveis = [f"{str(m).zfill(2)}/{ano}" for ano in [2026, 2027, 2028] for m in range(1, 13)]
             mes_atual_str = dt.datetime.today().strftime("%m/%Y")
             idx_mes = meses_disponiveis.index(mes_atual_str) if mes_atual_str in meses_disponiveis else 2 
@@ -1454,7 +1399,6 @@ with aba3:
             
             st.markdown("---")
             
-            # --- MOTOR DE CÁLCULO DO EXTRATO ---
             try:
                 pontos_extrato_ref = db.collection("pontos").where("uid_residente", "==", uid_alvo).where("mes_referencia", "==", mes_extrato).get()
                 pontos_extrato = [p.to_dict() for p in pontos_extrato_ref]
@@ -1467,9 +1411,6 @@ with aba3:
                 import calendar
                 from datetime import datetime, timedelta, date
                 
-                # ==========================================
-                # 1. CÁLCULO DA META EXATA DO MÊS SELECIONADO
-                # ==========================================
                 mes_str, ano_str = mes_extrato.split('/')
                 mes_num, ano_num = int(mes_str), int(ano_str)
                 
@@ -1482,7 +1423,6 @@ with aba3:
                     meta_p_mes += p_meta
                     meta_t_mes += t_meta
 
-                # 2. CÁLCULO DO QUE FOI REALIZADO (O que fez de verdade)
                 trab_p = 0.0
                 trab_t = 0.0
                 extrato_detalhado = []
@@ -1495,29 +1435,26 @@ with aba3:
                     
                     p_dia, t_dia = obter_metas_do_dia(dt_obj)
                         
-                    # 1. TRATAMENTO DE OURO: FÉRIAS É DIREITO (Abono integral da meta do dia)
                     if cat == "Férias":
                         trab_p += p_dia
                         trab_t += t_dia
                         valor_visual_p = f"Isento (+{formatar_horas_exatas_adm(p_dia)})"
                         valor_visual_t = f"Isento (+{formatar_horas_exatas_adm(t_dia)})"
-                        cor_linha = "#eff6ff" # Azul clarinho (Destaque de benefício)
-                        cor_texto = "#2563eb" # Azul forte
+                        cor_linha = "#eff6ff" 
+                        cor_texto = "#2563eb" 
                         
-                    # 2. AUSÊNCIAS COMUNS E FALTAS (Geram débito se não houver hora compensada no dia)
-                    elif cat in ["Ausência justificada", "Falta", "Feriado", "Licença", "Atestado", "Ponto facultativo"]:
+                    elif cat in ["Ausência Justificada", "Ausência justificada", "Falta", "Feriado", "Feriado / Ponto Facultativo", "Licença", "Atestado", "Atestado / Licença Médica", "Ponto facultativo"]:
                         horas_trab_p_no_dia = sum(float(p2.get("horas_computadas", 0.0)) for p2 in pontos_extrato if p2.get("data_registro") == data_str and p2.get("categoria") == "Prática")
-                        horas_trab_t_no_dia = sum(float(p2.get("horas_computadas", 0.0)) for p2 in pontos_extrato if p2.get("data_registro") == data_str and p2.get("categoria") in ["Teórica", "Teórico-prática"])
+                        horas_trab_t_no_dia = sum(float(p2.get("horas_computadas", 0.0)) for p2 in pontos_extrato if p2.get("data_registro") == data_str and p2.get("categoria") in ["Teórica", "Teórico-prática", "Estudo Auto-dirigido (AAD)"])
                         
                         deb_p = p_dia - horas_trab_p_no_dia if (p_dia - horas_trab_p_no_dia) > 0 else 0.0
                         deb_t = t_dia - horas_trab_t_no_dia if (t_dia - horas_trab_t_no_dia) > 0 else 0.0
                         
                         valor_visual_p = f"-{formatar_horas_exatas_adm(deb_p)}"
                         valor_visual_t = f"-{formatar_horas_exatas_adm(deb_t)}"
-                        cor_linha = "#fef2f2" # Fundo avermelhado
+                        cor_linha = "#fef2f2"
                         cor_texto = "#dc2626"
                         
-                    # 3. LANÇAMENTOS COMUNS DE TRABALHO
                     else:
                         if cat == "Prática": 
                             trab_p += horas
@@ -1531,7 +1468,11 @@ with aba3:
                         cor_linha = "#ffffff"
                         cor_texto = "#16a34a"
 
+                    tag_label = pt.get("tag", "Rotina Padrão")
                     obs = pt.get("justificativa", "Sem observações")
+                    if tag_label != "Rotina Padrão":
+                        obs = f"[{tag_label}] {obs}"
+                        
                     horarios = " | ".join(pt.get("horarios_descritos", []))
                     if not horarios: horarios = "Integral"
                     
@@ -1549,7 +1490,6 @@ with aba3:
                 saldo_p = trab_p - meta_p_mes
                 saldo_t = trab_t - meta_t_mes
 
-                # --- RENDERIZAÇÃO DOS CARDS ESTILO NUBANK ---
                 c_p, c_t = st.columns(2)
                 
                 with c_p:
@@ -1619,21 +1559,15 @@ with aba3:
                     </div>
                     """, unsafe_allow_html=True)
 
-# ========================================================
-        # SUB-ABA 3: FILTRO INVESTIGATIVO (Busca Avançada)
-        # ========================================================
         with sub_aba_filtros:
             st.markdown("<h3 style='color: #374151; font-weight: 800; margin-bottom: 5px;'>🔍 Filtro Investigativo por Categoria</h3>", unsafe_allow_html=True)
             st.markdown("<span style='color: #6b7280; font-size: 0.95rem;'>Selecione uma ou mais categorias abaixo para auditar o histórico isolado deste residente.</span><br><br>", unsafe_allow_html=True)
             
-            opcoes_categorias = ["Feriado", "Ponto facultativo", "Falta", "Atestado", "Ausência justificada", "Licença", "Férias", "Prática", "Teórica", "Teórico-prática"]
-            
-            categorias_selecionadas = st.multiselect("Selecione as Categorias Alvo:", opcoes_categorias, placeholder="Ex: Feriado, Ponto facultativo, Atestado...")
+            categorias_selecionadas = st.multiselect("Selecione as Categorias Alvo:", CATEGORIAS_OFICIAIS, placeholder="Ex: Feriado / Ponto Facultativo, Atestado / Licença Médica...")
             
             if categorias_selecionadas:
                 with st.spinner("Puxando capivara do residente..."):
                     try:
-                        # Busca no banco apenas os registros deste residente que batem com as categorias escolhidas
                         pontos_filtro_ref = db.collection("pontos").where("uid_residente", "==", uid_alvo).where("categoria", "in", categorias_selecionadas).get()
                         pontos_filtrados = [p.to_dict() for p in pontos_filtro_ref]
                     except Exception as e:
@@ -1644,7 +1578,6 @@ with aba3:
                         st.info("Nenhuma ocorrência encontrada para as categorias selecionadas.")
                     else:
                         import datetime as dt
-                        # Ordenar por data decrescente (mais recente primeiro)
                         pontos_filtrados = sorted(pontos_filtrados, key=lambda k: k.get("data_registro", ""), reverse=True)
                         
                         datas_unicas = set()
@@ -1652,14 +1585,13 @@ with aba3:
                         total_deb_p, total_deb_t = 0.0, 0.0
                         total_abono_p, total_abono_t = 0.0, 0.0
                         
-                        # --- NOVO MOTOR DE IMPACTO REAL NO BANCO DE HORAS (SEPARADO P/T) ---
                         for pt in pontos_filtrados:
                             cat = pt.get("categoria", "")
-                            # Normaliza categorias importadas do Excel antigo (caso estejam em maiúsculo)
-                            if cat.upper() == "ATESTADO": cat = "Atestado"
-                            elif cat.upper() == "FERIADO": cat = "Feriado"
+                            if cat.upper() == "ATESTADO" or cat.upper() == "LICENÇA": cat = "Atestado / Licença Médica"
+                            elif cat.upper() == "FERIADO" or cat.upper() == "PONTO FACULTATIVO": cat = "Feriado / Ponto Facultativo"
                             elif cat.upper() == "FALTA": cat = "Falta"
-                            elif cat.upper() == "PONTO FACULTATIVO": cat = "Ponto facultativo"
+                            elif cat.upper() == "AUSÊNCIA JUSTIFICADA": cat = "Ausência Justificada"
+                            elif cat.upper() == "FÉRIAS": cat = "Férias"
                             
                             horas = float(pt.get("horas_computadas", 0.0))
                             data_str = pt.get("data_registro", "")
@@ -1667,18 +1599,15 @@ with aba3:
                             if data_str:
                                 datas_unicas.add(data_str)
                                 dt_obj = dt.datetime.strptime(data_str, "%Y-%m-%d").date()
-                                
-                                # Puxa a meta do motor oficial separadamente
                                 p_dia, t_dia = obter_metas_do_dia(dt_obj)
                                 
                                 if cat == "Férias":
                                     total_abono_p += p_dia
                                     total_abono_t += t_dia
-                                elif cat in ["Ausência justificada", "Falta", "Feriado", "Licença", "Atestado", "Ponto facultativo"]:
+                                elif cat in ["Ausência Justificada", "Falta", "Feriado / Ponto Facultativo", "Atestado / Licença Médica"]:
                                     deb_p = p_dia
                                     deb_t = t_dia
                                     
-                                    # Se lançou alguma hora no dia de falta, abate da dívida primeiro da prática
                                     if horas > 0:
                                         if deb_p >= horas: deb_p -= horas
                                         else:
@@ -1693,10 +1622,8 @@ with aba3:
                                 else:
                                     total_trab_t += horas
 
-                        # --- Montagem Visual Dinâmica do Impacto ---
                         html_impacto = ""
                         
-                        # Bloco Prática
                         if total_trab_p > 0 or total_deb_p > 0 or total_abono_p > 0:
                             html_impacto += "<div style='margin-bottom: 10px;'>"
                             if total_trab_p > 0: html_impacto += f"<div style='font-size: 1.05rem; color: #2563eb; font-weight: 800;'>✅ +{total_trab_p:.1f}h (Prática Trabalhada)</div>"
@@ -1704,7 +1631,6 @@ with aba3:
                             if total_abono_p > 0: html_impacto += f"<div style='font-size: 1.05rem; color: #2563eb; font-weight: 800;'>🏖️ +{total_abono_p:.1f}h (Abono de Prática)</div>"
                             html_impacto += "</div>"
                             
-                        # Bloco Teórica
                         if total_trab_t > 0 or total_deb_t > 0 or total_abono_t > 0:
                             html_impacto += "<div>"
                             if total_trab_t > 0: html_impacto += f"<div style='font-size: 1.05rem; color: #7c3aed; font-weight: 800;'>✅ +{total_trab_t:.1f}h (Teórica Trabalhada)</div>"
@@ -1715,7 +1641,6 @@ with aba3:
                         if not html_impacto:
                             html_impacto = "<div style='font-size: 1.05rem; color: #6b7280; font-weight: 800;'>0.0h</div>"
 
-                        # --- KPIs do Filtro ---
                         c1, c2 = st.columns([1, 1.8])
                         with c1:
                             st.markdown(f"""
@@ -1735,18 +1660,23 @@ with aba3:
                         st.markdown("<hr style='border-color: #e5e7eb; margin: 25px 0 15px 0;'>", unsafe_allow_html=True)
                         st.markdown("<h4 style='color: #374151; font-weight: 700; font-size: 1.1rem; margin-bottom: 15px;'>📋 Lista Detalhada</h4>", unsafe_allow_html=True)
                         
-                        # --- Lista de Resultados ---
                         for pt in pontos_filtrados:
                             data_pt_str = pt.get("data_registro", "")
                             cat = pt.get("categoria", "")
-                            if cat.upper() == "ATESTADO": cat = "Atestado"
-                            elif cat.upper() == "FERIADO": cat = "Feriado"
+                            
+                            if cat.upper() == "ATESTADO" or cat.upper() == "LICENÇA": cat = "Atestado / Licença Médica"
+                            elif cat.upper() == "FERIADO" or cat.upper() == "PONTO FACULTATIVO": cat = "Feriado / Ponto Facultativo"
                             elif cat.upper() == "FALTA": cat = "Falta"
-                            elif cat.upper() == "PONTO FACULTATIVO": cat = "Ponto facultativo"
+                            elif cat.upper() == "AUSÊNCIA JUSTIFICADA": cat = "Ausência Justificada"
+                            elif cat.upper() == "FÉRIAS": cat = "Férias"
                             
                             horas = float(pt.get("horas_computadas", 0.0))
-                            obs = pt.get("justificativa", "Sem observações adicionais.")
                             
+                            tag_label = pt.get("tag", "Rotina Padrão")
+                            obs = pt.get("justificativa", "Sem observações adicionais.")
+                            if tag_label != "Rotina Padrão":
+                                obs = f"[{tag_label}] {obs}"
+                                
                             impacto_p = ""
                             impacto_t = ""
                             cor_cat = "#6b7280"
@@ -1761,7 +1691,7 @@ with aba3:
                                     impacto_t = f"+{t_dia:.1f}h (Abono)"
                                     cor_cat = "#2563eb"
                                     txt_color = "#2563eb"
-                                elif cat in ["Ausência justificada", "Falta", "Feriado", "Licença", "Atestado", "Ponto facultativo"]:
+                                elif cat in ["Ausência Justificada", "Falta", "Feriado / Ponto Facultativo", "Atestado / Licença Médica"]:
                                     deb_p = p_dia
                                     deb_t = t_dia
                                     if horas > 0:
@@ -1846,53 +1776,57 @@ with aba4:
             
             st.markdown("<span style='font-size: 0.85rem; font-weight: 600; color: #374151;'>Preenchimento Expresso (Opcional):</span>", unsafe_allow_html=True)
             acao_expressa = st.pills("Configuração Rápida:", 
-                ["Personalizado (Preencher Manualmente)", "Falta Integral", "Atestado Integral", "Feriado", "Ponto Facultativo", "Férias"], 
+                ["Personalizado (Preencher Manualmente)", "Aula Teórica", "Estudo Auto-dirigido", "Falta Integral", "Atestado / Licença Médica", "Feriado / Ponto Facultativo", "Férias"], 
                 default="Personalizado (Preencher Manualmente)", 
                 label_visibility="collapsed"
             )
 
             with st.form("form_lote_adm", clear_on_submit=True):
-                is_express = acao_expressa != "Personalizado (Preencher Manualmente)"
+                is_express_cat = acao_expressa != "Personalizado (Preencher Manualmente)"
+                is_ausencia_integral = acao_expressa in ["Falta Integral", "Atestado / Licença Médica", "Feriado / Ponto Facultativo", "Férias"]
                 
                 cat_padrao = "Prática"
-                if acao_expressa == "Falta Integral": cat_padrao = "Falta"
-                elif acao_expressa == "Atestado Integral": cat_padrao = "Atestado"
-                elif acao_expressa == "Feriado": cat_padrao = "Feriado"
-                elif acao_expressa == "Ponto Facultativo": cat_padrao = "Ponto facultativo"
+                if acao_expressa == "Aula Teórica": cat_padrao = "Teórica"
+                elif acao_expressa == "Estudo Auto-dirigido": cat_padrao = "Estudo Auto-dirigido (AAD)"
+                elif acao_expressa == "Falta Integral": cat_padrao = "Falta"
+                elif acao_expressa == "Atestado / Licença Médica": cat_padrao = "Atestado / Licença Médica"
+                elif acao_expressa == "Feriado / Ponto Facultativo": cat_padrao = "Feriado / Ponto Facultativo"
                 elif acao_expressa == "Férias": cat_padrao = "Férias"
                 
-                opcoes_totais = ["Prática", "Teórica", "Teórico-prática", "Ausência justificada", "Falta", "Férias", "Feriado", "Licença", "Atestado", "Ponto facultativo"]
+                c_cat, c_tag = st.columns(2)
+                with c_cat:
+                    st.markdown("<div style='font-size: 0.95rem; font-weight: 600; color: #374151; margin-bottom: 5px;'>Vínculo da Categoria:</div>", unsafe_allow_html=True)
+                    i_cat = st.selectbox("Categoria Oficial", CATEGORIAS_OFICIAIS, index=CATEGORIAS_OFICIAIS.index(cat_padrao), disabled=is_express_cat, label_visibility="collapsed")
+                with c_tag:
+                    st.markdown("<div style='font-size: 0.95rem; font-weight: 600; color: #374151; margin-bottom: 5px;'>Marcador / Tag (Opcional):</div>", unsafe_allow_html=True)
+                    i_tag_lote = st.selectbox("Marcador / Tag", carregar_tags(), disabled=is_ausencia_integral, label_visibility="collapsed")
                 
-                st.markdown("<div style='font-size: 0.95rem; font-weight: 600; color: #374151; margin-bottom: 5px;'>Vínculo da Categoria:</div>", unsafe_allow_html=True)
-                i_cat = st.selectbox("Categoria", opcoes_totais, index=opcoes_totais.index(cat_padrao), disabled=is_express, label_visibility="collapsed")
+                st.markdown("<div style='font-size: 0.95rem; font-weight: 600; color: #374151; margin-top: 15px;'>Carga Horária (Apenas para lançamentos personalizados ou aulas):</div>", unsafe_allow_html=True)
                 
-                st.markdown("<div style='font-size: 0.95rem; font-weight: 600; color: #374151; margin-top: 15px;'>Carga Horária (Apenas para lançamentos personalizados):</div>", unsafe_allow_html=True)
-                
-                # Campos separados por turno (Design Corporativo com Caixas e Cores)
                 c_m, c_t, c_n = st.columns(3)
                 
                 with c_m:
                     with st.container(border=True):
                         st.markdown("<div style='background-color: #fef9c3; padding: 8px; border-radius: 6px; text-align: center; color: #a16207; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 10px; border: 1px solid #fde047;'>☀️ MANHÃ</div>", unsafe_allow_html=True)
-                        m_ent = st.text_input("Entrada (ex: 08:00)", disabled=is_express, key="m_ent")
-                        m_sai = st.text_input("Saída (ex: 12:00)", disabled=is_express, key="m_sai")
+                        m_ent = st.text_input("Entrada (ex: 08:00)", disabled=is_ausencia_integral, key="m_ent")
+                        m_sai = st.text_input("Saída (ex: 12:00)", disabled=is_ausencia_integral, key="m_sai")
                         
                 with c_t:
                     with st.container(border=True):
                         st.markdown("<div style='background-color: #ffedd5; padding: 8px; border-radius: 6px; text-align: center; color: #c2410c; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 10px; border: 1px solid #fdba74;'>🌤️ TARDE</div>", unsafe_allow_html=True)
-                        t_ent = st.text_input("Entrada (ex: 14:00)", disabled=is_express, key="t_ent")
-                        t_sai = st.text_input("Saída (ex: 18:00)", disabled=is_express, key="t_sai")
+                        t_ent = st.text_input("Entrada (ex: 14:00)", disabled=is_ausencia_integral, key="t_ent")
+                        t_sai = st.text_input("Saída (ex: 18:00)", disabled=is_ausencia_integral, key="t_sai")
                         
                 with c_n:
                     with st.container(border=True):
                         st.markdown("<div style='background-color: #e0e7ff; padding: 8px; border-radius: 6px; text-align: center; color: #4338ca; font-weight: 800; letter-spacing: 0.5px; margin-bottom: 10px; border: 1px solid #a5b4fc;'>🌙 NOITE</div>", unsafe_allow_html=True)
-                        n_ent = st.text_input("Entrada (ex: 19:00)", disabled=is_express, key="n_ent")
-                        n_sai = st.text_input("Saída (ex: 22:00)", disabled=is_express, key="n_sai")
+                        n_ent = st.text_input("Entrada (ex: 19:00)", disabled=is_ausencia_integral, key="n_ent")
+                        n_sai = st.text_input("Saída (ex: 22:00)", disabled=is_ausencia_integral, key="n_sai")
 
                 st.markdown("<span style='font-size: 0.85rem; color: #6b7280;'>Ou insira o total manual diretamente (sobrepõe os turnos acima):</span>", unsafe_allow_html=True)
                 c_h, c_min = st.columns(2)
-                i_hh = c_h.text_input("Total Horas (HH)", disabled=is_express)
-                i_mm = c_min.text_input("Total Minutos (MM)", disabled=is_express)
+                i_hh = c_h.text_input("Total Horas (HH)", disabled=is_ausencia_integral)
+                i_mm = c_min.text_input("Total Minutos (MM)", disabled=is_ausencia_integral)
                 
                 st.markdown("<div style='font-size: 0.95rem; font-weight: 600; color: #374151; margin-top: 15px;'>Justificativa / Observação:</div>", unsafe_allow_html=True)
                 i_obs = st.text_area("Motivo ou descrição oficial", label_visibility="collapsed")
@@ -1900,7 +1834,6 @@ with aba4:
                 submit_lote = st.form_submit_button("✅ Executar Lançamento", type="primary", use_container_width=True)
                 
                 if submit_lote:
-                    # Tratamento da Data e Período de forma segura
                     dt_inicio = dt_fim = None
                     if tipo_data == "Data Única" and periodo_lote:
                         dt_inicio = dt_fim = periodo_lote
@@ -1914,7 +1847,6 @@ with aba4:
                     if not dt_inicio or not dt_fim:
                         st.error("⚠️ Data inválida. Selecione o período corretamente.")
                     else:
-                        # Motor interno simples apenas para extrair as horas digitadas e montar a string
                         def calc_diff(ent, sai):
                             try:
                                 h1, m1 = map(int, ent.strip().split(":"))
@@ -1929,11 +1861,10 @@ with aba4:
                         horas_finais_decimais = 0.0
                         desc_horarios = []
                         
-                        if is_express:
+                        if is_ausencia_integral:
                             horas_finais_decimais = 0.0
                             desc_horarios.append("Integral (Lançamento Coordenação)")
                         else:
-                            # Prioriza o campo "Total Manual"
                             hh_val = int(i_hh) if i_hh and i_hh.isdigit() else 0
                             mm_val = int(i_mm) if i_mm and i_mm.isdigit() else 0
                             
@@ -1941,7 +1872,6 @@ with aba4:
                                 horas_finais_decimais = hh_val + (mm_val / 60.0)
                                 desc_horarios.append(f"{hh_val:02d}h {mm_val:02d}m (Total Manual)")
                             else:
-                                # Caso o Total esteja vazio, extrai a matemática dos turnos informados
                                 if m_ent and m_sai:
                                     h, d = calc_diff(m_ent, m_sai)
                                     horas_finais_decimais += h
@@ -1958,7 +1888,6 @@ with aba4:
                                 if not desc_horarios:
                                     desc_horarios.append("Sem horários detalhados (Coordenação)")
 
-                        # Transação Batch no Firebase (Executa múltiplos envios em uma única carga)
                         batch = db.batch()
                         contador_ops = 0
                         
@@ -1972,21 +1901,25 @@ with aba4:
                                     
                                     doc_ref = db.collection("pontos").document(doc_id_lote)
                                     
+                                    just_final = i_obs.strip() if i_obs else "Registro Oficial (Coordenação)"
+                                    if i_tag_lote != "Rotina Padrão" and not is_ausencia_integral:
+                                        just_final = f"[{i_tag_lote}] {just_final}"
+                                    
                                     dados_lote = {
                                         "uid_residente": uid,
                                         "data_registro": data_str_lote,
                                         "mes_referencia": mes_str_lote,
                                         "categoria": i_cat,
+                                        "tag": i_tag_lote if not is_ausencia_integral else "Rotina Padrão",
                                         "horas_computadas": horas_finais_decimais,
                                         "horarios_descritos": desc_horarios,
-                                        "justificativa": i_obs.strip() if i_obs else "Registro Oficial (Coordenação)",
+                                        "justificativa": just_final,
                                         "ultima_edicao": firestore.SERVER_TIMESTAMP
                                     }
                                     
                                     batch.set(doc_ref, dados_lote)
                                     contador_ops += 1
                                     
-                                    # O limite do Firebase Batch é de 500 operações. Renovamos a cada 450.
                                     if contador_ops >= 450:
                                         batch.commit()
                                         batch = db.batch()
@@ -1997,6 +1930,8 @@ with aba4:
                             if contador_ops > 0:
                                 batch.commit()
                             
+                            for uid in alvos_selecionados:
+                                invalidar_agregador(uid)
                                 
                             st.success("✔️ Transação executada com sucesso! O banco de dados foi atualizado de forma centralizada.")
                             
