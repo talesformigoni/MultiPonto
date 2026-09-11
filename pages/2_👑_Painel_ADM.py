@@ -64,24 +64,6 @@ def invalidar_agregador(uid_residente):
     except:
         pass
 
-@st.dialog("🏷️ Criar Novo Marcador")
-def modal_nova_tag():
-    st.markdown("<span style='color: #6b7280; font-size: 0.9rem;'>Crie uma nova tag para organizar os lançamentos. Ela aparecerá em todas as caixinhas de seleção instantaneamente.</span>", unsafe_allow_html=True)
-    n_tag = st.text_input("Nome do Marcador", placeholder="Ex: Reunião Geral, Ação na Praça...")
-    
-    if st.button("💾 Salvar Novo Marcador", type="primary", use_container_width=True):
-        if n_tag.strip():
-            tags_atuais = carregar_tags()
-            if n_tag.strip() not in tags_atuais:
-                tags_atuais.append(n_tag.strip())
-                salvar_tags(tags_atuais)
-                carregar_tags.clear()
-                st.rerun()
-            else:
-                st.warning("⚠️ Essa tag já existe!")
-        else:
-            st.error("Digite um nome válido.")
-
 # ==========================================
 # 1. SEGURANÇA MÁXIMA (O LEÃO DE CHÁCARA)
 # ==========================================
@@ -1792,13 +1774,28 @@ with aba4:
             
             st.markdown("<hr style='margin: 15px 0; border-color: #e5e7eb;'>", unsafe_allow_html=True)
             
-            # --- O BOTÃO MÁGICO QUE ABRE O MODAL ---
-            c_titulo_expresso, c_btn_nova_tag = st.columns([3, 1.2])
+            # --- O BOTÃO MÁGICO QUE ABRE O POPOVER (À PROVA DE BUGS) ---
+            c_titulo_expresso, c_btn_nova_tag = st.columns([3, 1.5])
             with c_titulo_expresso:
                 st.markdown("<span style='font-size: 0.85rem; font-weight: 600; color: #374151;'>Preenchimento Expresso (Opcional):</span>", unsafe_allow_html=True)
             with c_btn_nova_tag:
-                if st.button("➕ Criar Nova Tag Rápida", use_container_width=True):
-                    modal_nova_tag()
+                # O st.popover é perfeito para menus flutuantes dentro de colunas!
+                with st.popover("➕ Criar Nova Tag Rápida", use_container_width=True):
+                    st.markdown("<span style='color: #6b7280; font-size: 0.85rem;'>Crie uma nova tag para organizar os lançamentos.</span>", unsafe_allow_html=True)
+                    n_tag = st.text_input("Nome do Marcador", placeholder="Ex: Reunião Geral...", key="input_nova_tag_rapida")
+                    
+                    if st.button("💾 Salvar Marcador", type="primary", use_container_width=True, key="btn_salvar_tag_rapida"):
+                        if n_tag.strip():
+                            tags_atuais = carregar_tags()
+                            if n_tag.strip() not in tags_atuais:
+                                tags_atuais.append(n_tag.strip())
+                                salvar_tags(tags_atuais)
+                                carregar_tags.clear()
+                                st.rerun()
+                            else:
+                                st.warning("⚠️ Essa tag já existe!")
+                        else:
+                            st.error("Digite um nome válido.")
             acao_expressa = st.pills("Configuração Rápida:", 
                 ["Personalizado (Preencher Manualmente)", "Aula Teórica", "Estudo Auto-dirigido", "Falta Integral", "Atestado / Licença Médica", "Feriado / Ponto Facultativo", "Férias"], 
                 default="Personalizado (Preencher Manualmente)", 
