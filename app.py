@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 import streamlit as st
 import requests
 from firebase_config import db
