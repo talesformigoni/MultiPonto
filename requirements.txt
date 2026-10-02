@@ -1,13 +1,5 @@
-<<<<<<< HEAD
 streamlit
 plotly
 firebase-admin
 google-cloud-firestore
 fpdf
-=======
-streamlit
-plotly
-firebase-admin
-google-cloud-firestore
-fpdf
->>>>>>> 10a75be368621bd2f595fcee3d81a6967618346e
