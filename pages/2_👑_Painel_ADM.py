@@ -373,23 +373,23 @@ with aba1:
                     cat_stats[c]['horas_trab'] += horas_comp
                     cat_stats[c]['ocorrencias'] += 1
 
+                    # LÓGICA DE AUDITORIA REAL ALINHADA COM O MOTOR
                     if c in ["Ausência Justificada", "Falta", "Feriado / Ponto Facultativo", "Atestado / Licença Médica"]:
                         data_str = pt.get("data_registro", "")
                         if data_str:
                             dt_obj = dt.datetime.strptime(data_str, "%Y-%m-%d").date()
                             p_dia, t_dia = obter_metas_do_dia(dt_obj)
                             
-                            deb_p = p_dia
-                            deb_t = t_dia
+                            # A REGRA SUPREMA: A meta do dia inteiro SEMPRE é cobrada, a não ser que seja Férias.
+                            # O que quer que o residente não tenha feito, será dívida (Débito).
+                            # Primeiro, vemos o que ele TRABALHOU DE VERDADE nesse dia
+                            horas_trab_p_no_dia = sum(float(p2.get("horas_computadas", 0.0)) for p2 in pontos_res if p2.get("data_registro") == data_str and p2.get("categoria") == "Prática")
+                            horas_trab_t_no_dia = sum(float(p2.get("horas_computadas", 0.0)) for p2 in pontos_res if p2.get("data_registro") == data_str and p2.get("categoria") in ["Teórica", "Teórico-prática", "Estudo Auto-dirigido (AAD)"])
                             
-                            if horas_comp > 0:
-                                if deb_p >= horas_comp: 
-                                    deb_p -= horas_comp
-                                else:
-                                    resto = horas_comp - deb_p
-                                    deb_p = 0.0
-                                    deb_t = max(0.0, deb_t - resto)
-                                    
+                            # O débito real gerado pela ausência (Meta - O que ele de fato trabalhou)
+                            deb_p = p_dia - horas_trab_p_no_dia if p_dia > horas_trab_p_no_dia else 0.0
+                            deb_t = t_dia - horas_trab_t_no_dia if t_dia > horas_trab_t_no_dia else 0.0
+                                        
                             cat_stats[c]['debito_p'] += deb_p
                             cat_stats[c]['debito_t'] += deb_t
 
@@ -1325,6 +1325,7 @@ with aba3:
                                             "horas_computadas": nova_hora_decimal,
                                             "horarios_descritos": novos_horarios_lista,
                                             "justificativa": e_obs,
+                                            "modificado_por": st.session_state.get("nome_completo", "Administrador"),
                                             "ultima_edicao": firestore.SERVER_TIMESTAMP
                                         })
 
@@ -1363,7 +1364,7 @@ with aba3:
                         mm_val = int(i_mm) if i_mm and i_mm.isdigit() else 0
                         horas_finais_decimais = hh_val + (mm_val / 60.0)
                         
-                        doc_id_inj = f"{uid_alvo}_{data_str_alvo}_{i_cat.replace(' ', '')}"
+                        doc_id_inj = f"{uid_alvo}_{data_str_alvo}_{i_cat.replace(' ', '').replace('/', '-')}"
                         
                         dados_inj = {
                             "uid_residente": uid_alvo,
@@ -1374,7 +1375,8 @@ with aba3:
                             "horas_computadas": horas_finais_decimais,
                             "horarios_descritos": [f"{hh_val:02d}h {mm_val:02d}m (Lançado via Painel ADM)"],
                             "justificativa": f"{i_obs} (Alteração realizada pela Coordenação)" if i_obs else "(Alteração ADM)",
-                            "ultima_edicao": firestore.SERVER_TIMESTAMP
+                            "ultima_edicao": firestore.SERVER_TIMESTAMP,
+                            "modificado_por": st.session_state.get("nome_completo", "Administrador")
                         }
                         
                         try:
@@ -1447,13 +1449,20 @@ with aba3:
                         horas_trab_p_no_dia = sum(float(p2.get("horas_computadas", 0.0)) for p2 in pontos_extrato if p2.get("data_registro") == data_str and p2.get("categoria") == "Prática")
                         horas_trab_t_no_dia = sum(float(p2.get("horas_computadas", 0.0)) for p2 in pontos_extrato if p2.get("data_registro") == data_str and p2.get("categoria") in ["Teórica", "Teórico-prática", "Estudo Auto-dirigido (AAD)"])
                         
-                        deb_p = p_dia - horas_trab_p_no_dia if (p_dia - horas_trab_p_no_dia) > 0 else 0.0
-                        deb_t = t_dia - horas_trab_t_no_dia if (t_dia - horas_trab_t_no_dia) > 0 else 0.0
+                        # O Atestado/Falta não perdoa a dívida. A dívida é (Meta - O que você trabalhou)
+                        deb_p = p_dia - horas_trab_p_no_dia if p_dia > horas_trab_p_no_dia else 0.0
+                        deb_t = t_dia - horas_trab_t_no_dia if t_dia > horas_trab_t_no_dia else 0.0
                         
-                        valor_visual_p = f"-{formatar_horas_exatas_adm(deb_p)}"
-                        valor_visual_t = f"-{formatar_horas_exatas_adm(deb_t)}"
-                        cor_linha = "#fef2f2"
-                        cor_texto = "#dc2626"
+                        if deb_p == 0 and deb_t == 0: # Conseguiu bater a meta antes de sair
+                            valor_visual_p = "Sem Dívida"
+                            valor_visual_t = "Sem Dívida"
+                            cor_linha = "#f8fafc"
+                            cor_texto = "#6b7280"
+                        else:
+                            valor_visual_p = f"-{formatar_horas_exatas_adm(deb_p)}" if deb_p > 0 else "0h"
+                            valor_visual_t = f"-{formatar_horas_exatas_adm(deb_t)}" if deb_t > 0 else "0h"
+                            cor_linha = "#fef2f2"
+                            cor_texto = "#dc2626"
                         
                     else:
                         if cat == "Prática": 
@@ -1605,18 +1614,21 @@ with aba3:
                                     total_abono_p += p_dia
                                     total_abono_t += t_dia
                                 elif cat in ["Ausência Justificada", "Falta", "Feriado / Ponto Facultativo", "Atestado / Licença Médica"]:
-                                    deb_p = p_dia
-                                    deb_t = t_dia
+                                    # Puxa o dia inteiro do banco para ver o que ele trabalhou no dia do Atestado
+                                    try:
+                                        p_ref_dia = db.collection("pontos").where("uid_residente", "==", uid_alvo).where("data_registro", "==", data_str).get()
+                                        p_dia_db = [px.to_dict() for px in p_ref_dia]
+                                        trab_p_dia = sum(float(px.get("horas_computadas", 0.0)) for px in p_dia_db if px.get("categoria") == "Prática")
+                                        trab_t_dia = sum(float(px.get("horas_computadas", 0.0)) for px in p_dia_db if px.get("categoria") in ["Teórica", "Teórico-prática", "Estudo Auto-dirigido (AAD)"])
+                                    except:
+                                        trab_p_dia, trab_t_dia = 0.0, 0.0
                                     
-                                    if horas > 0:
-                                        if deb_p >= horas: deb_p -= horas
-                                        else:
-                                            resto = horas - deb_p
-                                            deb_p = 0.0
-                                            deb_t = max(0.0, deb_t - resto)
+                                    deb_p = p_dia - trab_p_dia if p_dia > trab_p_dia else 0.0
+                                    deb_t = t_dia - trab_t_dia if t_dia > trab_t_dia else 0.0
                                     
                                     total_deb_p += deb_p
                                     total_deb_t += deb_t
+                                    
                                 elif cat == "Prática":
                                     total_trab_p += horas
                                 else:
@@ -1692,17 +1704,19 @@ with aba3:
                                     cor_cat = "#2563eb"
                                     txt_color = "#2563eb"
                                 elif cat in ["Ausência Justificada", "Falta", "Feriado / Ponto Facultativo", "Atestado / Licença Médica"]:
-                                    deb_p = p_dia
-                                    deb_t = t_dia
-                                    if horas > 0:
-                                        if deb_p >= horas: deb_p -= horas
-                                        else:
-                                            resto = horas - deb_p
-                                            deb_p = 0.0
-                                            deb_t = max(0.0, deb_t - resto)
+                                    try:
+                                        p_ref_dia = db.collection("pontos").where("uid_residente", "==", uid_alvo).where("data_registro", "==", data_pt_str).get()
+                                        p_dia_db = [px.to_dict() for px in p_ref_dia]
+                                        trab_p_dia = sum(float(px.get("horas_computadas", 0.0)) for px in p_dia_db if px.get("categoria") == "Prática")
+                                        trab_t_dia = sum(float(px.get("horas_computadas", 0.0)) for px in p_dia_db if px.get("categoria") in ["Teórica", "Teórico-prática", "Estudo Auto-dirigido (AAD)"])
+                                    except:
+                                        trab_p_dia, trab_t_dia = 0.0, 0.0
+                                        
+                                    deb_p = p_dia - trab_p_dia if p_dia > trab_p_dia else 0.0
+                                    deb_t = t_dia - trab_t_dia if t_dia > trab_t_dia else 0.0
                                             
-                                    impacto_p = f"-{deb_p:.1f}h (Débito)"
-                                    impacto_t = f"-{deb_t:.1f}h (Débito)"
+                                    impacto_p = f"-{deb_p:.1f}h (Dívida Restante)" if deb_p > 0 else "0.0h"
+                                    impacto_t = f"-{deb_t:.1f}h (Dívida Restante)" if deb_t > 0 else "0.0h"
                                     cor_cat = "#dc2626"
                                     txt_color = "#dc2626"
                                 elif cat == "Prática":
@@ -1918,7 +1932,7 @@ with aba4:
                                 while data_atual <= dt_fim:
                                     data_str_lote = data_atual.strftime("%Y-%m-%d")
                                     mes_str_lote = data_atual.strftime("%m/%Y")
-                                    doc_id_lote = f"{uid}_{data_str_lote}_{i_cat.replace(' ', '')}"
+                                    doc_id_lote = f"{uid}_{data_str_lote}_{i_cat.replace(' ', '').replace('/', '-')}"
                                     
                                     doc_ref = db.collection("pontos").document(doc_id_lote)
                                     
@@ -1935,7 +1949,8 @@ with aba4:
                                         "horas_computadas": horas_finais_decimais,
                                         "horarios_descritos": desc_horarios,
                                         "justificativa": just_final,
-                                        "ultima_edicao": firestore.SERVER_TIMESTAMP
+                                        "ultima_edicao": firestore.SERVER_TIMESTAMP,
+                                        "modificado_por": st.session_state.get("nome_completo", "Administrador")
                                     }
                                     
                                     batch.set(doc_ref, dados_lote)
